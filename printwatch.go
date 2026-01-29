@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -35,6 +36,9 @@ type RegState struct {
 	Subkeys map[string]bool
 	Values  map[string]RegValue
 }
+
+var extensionIndex *ExtensionPathIndex
+
 
 func isAdmin() bool {
 	var sid *windows.SID
@@ -128,22 +132,21 @@ func captureKeyRecursive(hKey windows.Handle, relativePath string, state *RegSta
 	var index uint32
 	subkeyNames := []string{}
 	for {
-		nameBuf := make([]uint16, 256)
-		nameLen := uint32(len(nameBuf))
-		err := windows.RegEnumKeyEx(hKey, index, &nameBuf[0], &nameLen, nil, nil, nil, nil)
+		nameBuf := getNameBuffer()
+		nameLen := uint32(len(*nameBuf))
+		err := windows.RegEnumKeyEx(hKey, index, &(*nameBuf)[0], &nameLen, nil, nil, nil, nil)
 		if err == windows.ERROR_NO_MORE_ITEMS {
+			putNameBuffer(nameBuf)
 			break
 		}
 		if err != nil {
+			putNameBuffer(nameBuf)
 			return fmt.Errorf("error enumerating subkeys: %v", err)
 		}
-		subkeyName := syscall.UTF16ToString(nameBuf[:nameLen])
+		subkeyName := syscall.UTF16ToString((*nameBuf)[:nameLen])
+		putNameBuffer(nameBuf)
 		
-		fullPath := relativePath
-		if fullPath != "" {
-			fullPath += "\\"
-		}
-		fullPath += subkeyName
+		fullPath := buildPath(relativePath, subkeyName)
 		
 		state.Subkeys[fullPath] = true
 		subkeyNames = append(subkeyNames, subkeyName)
@@ -153,38 +156,40 @@ func captureKeyRecursive(hKey windows.Handle, relativePath string, state *RegSta
 	// Enumerate values at this level
 	index = 0
 	for {
-		nameBuf := make([]uint16, 16384)
-		nameLen := uint32(len(nameBuf))
+		nameBuf := getNameBuffer()
+		nameLen := uint32(len(*nameBuf))
 		var valueType uint32
-		dataBuf := make([]byte, 16384)
-		dataLen := uint32(len(dataBuf))
+		dataBuf := getDataBuffer()
+		dataLen := uint32(len(*dataBuf))
 
 		ret, _, _ := regEnumValueW.Call(
 			uintptr(hKey),
 			uintptr(index),
-			uintptr(unsafe.Pointer(&nameBuf[0])),
+			uintptr(unsafe.Pointer(&(*nameBuf)[0])),
 			uintptr(unsafe.Pointer(&nameLen)),
 			0,
 			uintptr(unsafe.Pointer(&valueType)),
-			uintptr(unsafe.Pointer(&dataBuf[0])),
+			uintptr(unsafe.Pointer(&(*dataBuf)[0])),
 			uintptr(unsafe.Pointer(&dataLen)),
 		)
 
 		if ret == uintptr(windows.ERROR_NO_MORE_ITEMS) {
+			putNameBuffer(nameBuf)
+			putDataBuffer(dataBuf)
 			break
 		}
 		if ret != 0 {
+			putNameBuffer(nameBuf)
+			putDataBuffer(dataBuf)
 			return fmt.Errorf("error enumerating values: error code %d", ret)
 		}
 
-		valueName := syscall.UTF16ToString(nameBuf[:nameLen])
-		valueData := formatRegValue(valueType, dataBuf[:dataLen])
+		valueName := syscall.UTF16ToString((*nameBuf)[:nameLen])
+		valueData := formatRegValue(valueType, (*dataBuf)[:dataLen])
+		putNameBuffer(nameBuf)
+		putDataBuffer(dataBuf)
 		
-		fullPath := relativePath
-		if fullPath != "" {
-			fullPath += "\\"
-		}
-		fullPath += valueName
+		fullPath := buildPath(relativePath, valueName)
 		
 		state.Values[fullPath] = RegValue{
 			Name: fullPath,
@@ -208,11 +213,7 @@ func captureKeyRecursive(hKey windows.Handle, relativePath string, state *RegSta
 			continue
 		}
 
-		fullPath := relativePath
-		if fullPath != "" {
-			fullPath += "\\"
-		}
-		fullPath += subkeyName
+		fullPath := buildPath(relativePath, subkeyName)
 
 		captureKeyRecursive(hSubKey, fullPath, state)
 		windows.RegCloseKey(hSubKey)
@@ -539,33 +540,20 @@ func printDiff(oldState, newState *RegState, keyPath string) {
 }
 
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || 
-		(len(s) > len(substr) && 
-		 indexOf(s, substr) >= 0))
+	return containsIgnoreCase(s, substr)
 }
 
 func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		match := true
-		for j := 0; j < len(substr); j++ {
-			if s[i+j] != substr[j] && s[i+j] != substr[j]+32 && s[i+j]+32 != substr[j] {
-				match = false
-				break
-			}
-		}
-		if match {
-			return i
-		}
-	}
-	return -1
+	lowerS := strings.ToLower(s)
+	lowerSubstr := strings.ToLower(substr)
+	return strings.Index(lowerS, lowerSubstr)
 }
 
 func extractExtensionIDFromValue(value string) string {
 	// Extension ID is the string before the first ';'
-	for i := 0; i < len(value); i++ {
-		if value[i] == ';' {
-			return value[:i]
-		}
+	idx := strings.Index(value, ";")
+	if idx >= 0 {
+		return strings.TrimSpace(value[:idx])
 	}
 	return value
 }
@@ -591,32 +579,38 @@ func readKeyValues(baseKeyPath, relativePath string) (map[string]string, error) 
 	values := make(map[string]string)
 	var index uint32
 	for {
-		nameBuf := make([]uint16, 16384)
-		nameLen := uint32(len(nameBuf))
+		nameBuf := getNameBuffer()
+		nameLen := uint32(len(*nameBuf))
 		var valueType uint32
-		dataBuf := make([]byte, 16384)
-		dataLen := uint32(len(dataBuf))
+		dataBuf := getDataBuffer()
+		dataLen := uint32(len(*dataBuf))
 
 		ret, _, _ := regEnumValueW.Call(
 			uintptr(hKey),
 			uintptr(index),
-			uintptr(unsafe.Pointer(&nameBuf[0])),
+			uintptr(unsafe.Pointer(&(*nameBuf)[0])),
 			uintptr(unsafe.Pointer(&nameLen)),
 			0,
 			uintptr(unsafe.Pointer(&valueType)),
-			uintptr(unsafe.Pointer(&dataBuf[0])),
+			uintptr(unsafe.Pointer(&(*dataBuf)[0])),
 			uintptr(unsafe.Pointer(&dataLen)),
 		)
 
 		if ret == uintptr(windows.ERROR_NO_MORE_ITEMS) {
+			putNameBuffer(nameBuf)
+			putDataBuffer(dataBuf)
 			break
 		}
 		if ret != 0 {
+			putNameBuffer(nameBuf)
+			putDataBuffer(dataBuf)
 			return nil, fmt.Errorf("error enumerating values: error code %d", ret)
 		}
 
-		valueName := syscall.UTF16ToString(nameBuf[:nameLen])
-		valueData := formatRegValue(valueType, dataBuf[:dataLen])
+		valueName := syscall.UTF16ToString((*nameBuf)[:nameLen])
+		valueData := formatRegValue(valueType, (*dataBuf)[:dataLen])
+		putNameBuffer(nameBuf)
+		putDataBuffer(dataBuf)
 		values[valueName] = valueData
 		index++
 	}
@@ -626,52 +620,12 @@ func readKeyValues(baseKeyPath, relativePath string) (map[string]string, error) 
 
 func getBlocklistKeyPath(forcelistPath string) string {
 	// Replace "ExtensionInstallForcelist" with "ExtensionInstallBlocklist"
-	result := ""
-	for i := 0; i < len(forcelistPath); i++ {
-		if i+len("ExtensionInstallForcelist") <= len(forcelistPath) {
-			match := true
-			for j := 0; j < len("ExtensionInstallForcelist"); j++ {
-				c1 := forcelistPath[i+j]
-				c2 := "ExtensionInstallForcelist"[j]
-				if c1 != c2 && c1 != c2+32 && c1+32 != c2 {
-					match = false
-					break
-				}
-			}
-			if match {
-				result += "ExtensionInstallBlocklist"
-				i += len("ExtensionInstallForcelist") - 1
-				continue
-			}
-		}
-		result += string(forcelistPath[i])
-	}
-	return result
+	return replacePathComponent(forcelistPath, "ExtensionInstallForcelist", "ExtensionInstallBlocklist")
 }
 
 func getAllowlistKeyPath(forcelistPath string) string {
 	// Replace "ExtensionInstallForcelist" with "ExtensionInstallAllowlist"
-	result := ""
-	for i := 0; i < len(forcelistPath); i++ {
-		if i+len("ExtensionInstallForcelist") <= len(forcelistPath) {
-			match := true
-			for j := 0; j < len("ExtensionInstallForcelist"); j++ {
-				c1 := forcelistPath[i+j]
-				c2 := "ExtensionInstallForcelist"[j]
-				if c1 != c2 && c1 != c2+32 && c1+32 != c2 {
-					match = false
-					break
-				}
-			}
-			if match {
-				result += "ExtensionInstallAllowlist"
-				i += len("ExtensionInstallForcelist") - 1
-				continue
-			}
-		}
-		result += string(forcelistPath[i])
-	}
-	return result
+	return replacePathComponent(forcelistPath, "ExtensionInstallForcelist", "ExtensionInstallAllowlist")
 }
 
 func removeFromAllowlist(baseKeyPath, allowlistPath, extensionID string) error {
@@ -743,28 +697,14 @@ func isChromeExtensionForcelist(path string) bool {
 func extractFirefoxExtensionID(valuePath string) string {
 	// For Firefox, the extension ID is typically in the path itself
 	// Path format: Mozilla\Firefox\ExtensionSettings\{extension-id}\installation_mode
-	parts := []string{}
-	current := ""
-	for i := 0; i < len(valuePath); i++ {
-		if valuePath[i] == '\\' {
-			if current != "" {
-				parts = append(parts, current)
-				current = ""
-			}
-		} else {
-			current += string(valuePath[i])
-		}
-	}
-	if current != "" {
-		parts = append(parts, current)
-	}
+	parts := splitPath(valuePath)
 	
 	// Find ExtensionSettings and get the next part (extension ID)
 	for i := 0; i < len(parts); i++ {
 		if parts[i] == "ExtensionSettings" && i+1 < len(parts) {
 			extID := parts[i+1]
 			// Extension IDs for Firefox are typically {guid} format or name@domain
-			if len(extID) > 0 && (extID[0] == '{' || contains(extID, "@")) {
+			if len(extID) > 0 && (extID[0] == '{' || containsIgnoreCase(extID, "@")) {
 				return extID
 			}
 		}
@@ -915,60 +855,46 @@ func removeExtensionSettingsForID(baseKeyPath, extensionID string, state *RegSta
 	fmt.Printf("  📊 Scanning %d subkeys and %d values...\n", len(state.Subkeys), len(state.Values))
 	
 	// Find and remove settings at: *\*\3rdparty\extensions\{extension-id}
-	settingsToRemove := make(map[string]bool)
+	var settingsToRemove map[string]bool
 	
-	// Check subkeys - look for any path containing both "3rdparty" and "extensions" and the extension ID
-	for subkeyPath := range state.Subkeys {
-		// Check if this path contains 3rdparty, extensions, and our extension ID
-		has3rdparty := contains(subkeyPath, "3rdparty")
-		hasExtensions := contains(subkeyPath, "extensions")
-		hasExtensionID := contains(subkeyPath, extensionID)
-		
-		if has3rdparty && hasExtensions && hasExtensionID {
-			fmt.Printf("  🎯 Found matching subkey: %s\n", subkeyPath)
-			settingsToRemove[subkeyPath] = true
+	// Use index for O(1) lookup if available
+	if extensionIndex != nil {
+		paths := extensionIndex.GetPaths(extensionID)
+		settingsToRemove = make(map[string]bool, len(paths))
+		for _, p := range paths {
+			fmt.Printf("  🎯 Found (indexed): %s\n", p)
+			settingsToRemove[p] = true
 		}
-	}
-	
-	// Check values
-	for valuePath := range state.Values {
-		has3rdparty := contains(valuePath, "3rdparty")
-		hasExtensions := contains(valuePath, "extensions")
-		hasExtensionID := contains(valuePath, extensionID)
+	} else {
+		// Fallback: scan all keys
+		settingsToRemove = make(map[string]bool)
 		
-		if has3rdparty && hasExtensions && hasExtensionID {
-			fmt.Printf("  🎯 Found matching value: %s\n", valuePath)
-			
-			// Extract the extension settings key path (up to and including the extension ID)
-			parts := []string{}
-			current := ""
-			for i := 0; i < len(valuePath); i++ {
-				if valuePath[i] == '\\' {
-					if current != "" {
-						parts = append(parts, current)
-						current = ""
-					}
-				} else {
-					current += string(valuePath[i])
-				}
+		// Check subkeys
+		for subkeyPath := range state.Subkeys {
+			if containsIgnoreCase(subkeyPath, "3rdparty") &&
+			   containsIgnoreCase(subkeyPath, "extensions") &&
+			   containsIgnoreCase(subkeyPath, extensionID) {
+				fmt.Printf("  🎯 Found matching subkey: %s\n", subkeyPath)
+				settingsToRemove[subkeyPath] = true
 			}
-			if current != "" {
-				parts = append(parts, current)
-			}
-			
-			// Build path up to and including extension ID
-			for i := 0; i < len(parts); i++ {
-				if parts[i] == extensionID {
-					settingsPath := ""
-					for j := 0; j <= i; j++ {
-						if j > 0 {
-							settingsPath += "\\"
-						}
-						settingsPath += parts[j]
+		}
+		
+		// Check values
+		for valuePath := range state.Values {
+			if containsIgnoreCase(valuePath, "3rdparty") &&
+			   containsIgnoreCase(valuePath, "extensions") &&
+			   containsIgnoreCase(valuePath, extensionID) {
+				fmt.Printf("  🎯 Found matching value: %s\n", valuePath)
+				
+				// Extract extension settings path (up to extension ID)
+				parts := splitPath(valuePath)
+				for i := 0; i < len(parts); i++ {
+					if parts[i] == extensionID {
+						settingsPath := strings.Join(parts[:i+1], "\\")
+						fmt.Printf("  📍 Extracted settings path: %s\n", settingsPath)
+						settingsToRemove[settingsPath] = true
+						break
 					}
-					fmt.Printf("  📍 Extracted settings path: %s\n", settingsPath)
-					settingsToRemove[settingsPath] = true
-					break
 				}
 			}
 		}
@@ -991,19 +917,26 @@ func removeExtensionSettingsForID(baseKeyPath, extensionID string, state *RegSta
 			fmt.Printf("  ✓ Successfully removed settings for %s\n", extensionID)
 			// Remove from state
 			delete(state.Subkeys, settingsPath)
-			// Remove all child keys and values
-			for keyPath := range state.Subkeys {
-				if len(keyPath) > len(settingsPath) && 
-				   keyPath[:len(settingsPath)] == settingsPath {
-					delete(state.Subkeys, keyPath)
-				}
+			// Remove all child keys and values using optimized cleanup
+			removeSubtreeFromState(state, settingsPath)
+			// Update index
+			if extensionIndex != nil {
+				extensionIndex.Remove(extensionID)
 			}
-			for valName := range state.Values {
-				if len(valName) > len(settingsPath) && 
-				   valName[:len(settingsPath)] == settingsPath {
-					delete(state.Values, valName)
-				}
-			}
+		}
+	}
+}
+
+func removeSubtreeFromState(state *RegState, prefix string) {
+	// Efficiently remove all keys/values under prefix
+	for keyPath := range state.Subkeys {
+		if strings.HasPrefix(keyPath, prefix) && len(keyPath) > len(prefix) {
+			delete(state.Subkeys, keyPath)
+		}
+	}
+	for valName := range state.Values {
+		if strings.HasPrefix(valName, prefix) && len(valName) > len(prefix) {
+			delete(state.Values, valName)
 		}
 	}
 }
@@ -1351,6 +1284,12 @@ func main() {
 		return
 	}
 	fmt.Printf("Initial state: %d subkeys, %d values\n", len(previousState.Subkeys), len(previousState.Values))
+
+	// Build extension path index for O(1) lookups
+	fmt.Println("Building extension path index...")
+	extensionIndex = NewExtensionPathIndex()
+	extensionIndex.BuildFromState(previousState)
+	fmt.Printf("Index built: tracking %d unique extension IDs\n", len(extensionIndex.pathsByExtID))
 
 	// Process any existing extension policies at startup
 	processExistingPolicies(keyPath, previousState)

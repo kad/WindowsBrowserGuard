@@ -1,9 +1,0 @@
-Install autossh as a Windows service.
-Now back in Windows, open a new command Window (Start → Run → cmd).
-cd C:\cygwin\bin
-cygrunsrv -I AutoSSH -p /usr/bin/autossh -a “-M 20000 -L
-localaddress:port:serveraddress:port user@ssh.host.name” -e
-AUTOSSH_NTSERVICE=yes
-
-
-
