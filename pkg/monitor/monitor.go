@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -8,11 +9,18 @@ import (
 	"github.com/kad/WindowsBrowserGuard/pkg/detection"
 	"github.com/kad/WindowsBrowserGuard/pkg/pathutils"
 	"github.com/kad/WindowsBrowserGuard/pkg/registry"
+	"github.com/kad/WindowsBrowserGuard/pkg/telemetry"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sys/windows"
 )
 
 // CaptureRegistryState captures the current state of a registry key and all its subkeys
-func CaptureRegistryState(hKey windows.Handle, keyPath string) (*registry.RegState, error) {
+func CaptureRegistryState(ctx context.Context, hKey windows.Handle, keyPath string) (*registry.RegState, error) {
+	ctx, span := telemetry.StartSpan(ctx, "monitor.CaptureRegistryState",
+		attribute.String("key-path", keyPath),
+	)
+	defer span.End()
+
 	state := &registry.RegState{
 		Subkeys: make(map[string]bool),
 		Values:  make(map[string]registry.RegValue),
@@ -20,14 +28,25 @@ func CaptureRegistryState(hKey windows.Handle, keyPath string) (*registry.RegSta
 
 	err := registry.CaptureKeyRecursive(hKey, "", state, 0)
 	if err != nil {
+		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
+
+	telemetry.SetAttributes(ctx,
+		attribute.Int("subkeys-count", len(state.Subkeys)),
+		attribute.Int("values-count", len(state.Values)),
+	)
 
 	return state, nil
 }
 
 // PrintDiff compares two registry states and prints the differences
-func PrintDiff(oldState, newState *registry.RegState, keyPath string, canWrite bool, extensionIndex *registry.ExtensionPathIndex) {
+func PrintDiff(ctx context.Context, oldState, newState *registry.RegState, keyPath string, canWrite bool, extensionIndex *registry.ExtensionPathIndex) {
+	ctx, span := telemetry.StartSpan(ctx, "monitor.PrintDiff",
+		attribute.String("key-path", keyPath),
+		attribute.Bool("can-write", canWrite),
+	)
+	defer span.End()
 	fmt.Println("\n========== CHANGES DETECTED ==========")
 	fmt.Println("Time:", time.Now().Format(time.RFC3339))
 	fmt.Println("Key:", keyPath)
@@ -184,7 +203,14 @@ func PrintDiff(oldState, newState *registry.RegState, keyPath string, canWrite b
 }
 
 // ProcessExistingPolicies scans for and processes existing extension install policies
-func ProcessExistingPolicies(keyPath string, state *registry.RegState, canWrite bool, extensionIndex *registry.ExtensionPathIndex) {
+// ProcessExistingPolicies scans for and processes existing extension install policies
+func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registry.RegState, canWrite bool, extensionIndex *registry.ExtensionPathIndex) {
+	ctx, span := telemetry.StartSpan(ctx, "monitor.ProcessExistingPolicies",
+		attribute.String("key-path", keyPath),
+		attribute.Bool("can-write", canWrite),
+	)
+	defer span.End()
+
 	if !canWrite && !admin.IsAdmin() {
 		fmt.Println("\n========================================")
 		fmt.Println("Checking for existing extension policies...")
@@ -322,7 +348,14 @@ func ProcessExistingPolicies(keyPath string, state *registry.RegState, canWrite 
 }
 
 // CleanupAllowlists removes ExtensionInstallAllowlist keys
-func CleanupAllowlists(keyPath string, state *registry.RegState, canWrite bool) {
+// CleanupAllowlists removes ExtensionInstallAllowlist keys
+func CleanupAllowlists(ctx context.Context, keyPath string, state *registry.RegState, canWrite bool) {
+	ctx, span := telemetry.StartSpan(ctx, "monitor.CleanupAllowlists",
+		attribute.String("key-path", keyPath),
+		attribute.Bool("can-write", canWrite),
+	)
+	defer span.End()
+
 	if !admin.IsAdmin() {
 		return
 	}
@@ -418,7 +451,13 @@ func GetBlockedExtensionIDs(keyPath string, state *registry.RegState) map[string
 }
 
 // CleanupExtensionSettings removes extension settings for all blocked extensions
-func CleanupExtensionSettings(keyPath string, state *registry.RegState, canWrite bool, extensionIndex *registry.ExtensionPathIndex) {
+func CleanupExtensionSettings(ctx context.Context, keyPath string, state *registry.RegState, canWrite bool, extensionIndex *registry.ExtensionPathIndex) {
+	ctx, span := telemetry.StartSpan(ctx, "monitor.CleanupExtensionSettings",
+		attribute.String("key-path", keyPath),
+		attribute.Bool("can-write", canWrite),
+	)
+	defer span.End()
+
 	if !admin.IsAdmin() {
 		return
 	}
@@ -453,10 +492,17 @@ func CleanupExtensionSettings(keyPath string, state *registry.RegState, canWrite
 }
 
 // WatchRegistryChanges monitors registry changes and processes them
-func WatchRegistryChanges(hKey windows.Handle, keyPath string, previousState *registry.RegState, canWrite bool, extensionIndex *registry.ExtensionPathIndex) {
+func WatchRegistryChanges(ctx context.Context, hKey windows.Handle, keyPath string, previousState *registry.RegState, canWrite bool, extensionIndex *registry.ExtensionPathIndex) {
+	ctx, span := telemetry.StartSpan(ctx, "monitor.WatchRegistryChanges",
+		attribute.String("key-path", keyPath),
+		attribute.Bool("can-write", canWrite),
+	)
+	defer span.End()
+
 	event, err := windows.CreateEvent(nil, 0, 0, nil)
 	if err != nil {
 		fmt.Println("Error creating event:", err)
+		telemetry.RecordError(ctx, err)
 		return
 	}
 	defer windows.CloseHandle(event)
@@ -464,30 +510,36 @@ func WatchRegistryChanges(hKey windows.Handle, keyPath string, previousState *re
 	err = windows.RegNotifyChangeKeyValue(hKey, true, windows.REG_NOTIFY_CHANGE_NAME|windows.REG_NOTIFY_CHANGE_LAST_SET, event, true)
 	if err != nil {
 		fmt.Println("Error setting up registry notification:", err)
+		telemetry.RecordError(ctx, err)
 		return
 	}
 
 	fmt.Println("Monitoring registry changes...")
+	telemetry.AddEvent(ctx, "monitoring-started")
 
 	for {
 		status, err := windows.WaitForSingleObject(event, windows.INFINITE)
 		if err != nil {
 			fmt.Println("Error waiting for event:", err)
+			telemetry.RecordError(ctx, err)
 			return
 		}
 
 		if status == windows.WAIT_OBJECT_0 {
-			newState, err := CaptureRegistryState(hKey, keyPath)
+			telemetry.AddEvent(ctx, "registry-change-detected")
+			
+			newState, err := CaptureRegistryState(ctx, hKey, keyPath)
 			if err != nil {
 				fmt.Println("Error capturing new state:", err)
 			} else {
-				PrintDiff(previousState, newState, keyPath, canWrite, extensionIndex)
+				PrintDiff(ctx, previousState, newState, keyPath, canWrite, extensionIndex)
 				previousState = newState
 			}
 
 			err = windows.RegNotifyChangeKeyValue(hKey, true, windows.REG_NOTIFY_CHANGE_NAME|windows.REG_NOTIFY_CHANGE_LAST_SET, event, true)
 			if err != nil {
 				fmt.Println("Error re-arming registry notification:", err)
+				telemetry.RecordError(ctx, err)
 				return
 			}
 		}

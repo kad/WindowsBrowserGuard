@@ -18,6 +18,23 @@ Test the application safely without making any changes:
 - ✅ Shows planned operations (without executing them)
 - ✅ Perfect for testing and validation
 
+### OpenTelemetry Tracing 📊
+Monitor performance and debug issues with distributed tracing:
+```powershell
+# Trace to stdout
+.\WindowsBrowserGuard.exe --dry-run --trace-file stdout
+
+# Trace to file
+.\WindowsBrowserGuard.exe --dry-run --trace-file traces.json
+```
+
+**Tracing provides:**
+- ✅ Detailed visibility into application behavior
+- ✅ Performance monitoring for each operation
+- ✅ Complete execution flow traces
+- ✅ Error tracking and debugging
+- ✅ OpenTelemetry standard format (JSON)
+
 ### Production Mode
 Run with full blocking capabilities:
 ```powershell
@@ -31,7 +48,7 @@ Requires Administrator privileges to modify registry keys.
 WindowsBrowserGuard/
 ├── cmd/
 │   └── WindowsBrowserGuard/
-│       └── main.go                 # Main application entry point (74 lines)
+│       └── main.go                 # Main application entry point (145 lines)
 ├── pkg/
 │   ├── admin/
 │   │   └── admin.go                # Windows privilege management
@@ -43,8 +60,10 @@ WindowsBrowserGuard/
 │   │   └── monitor.go              # Registry monitoring and state management
 │   ├── pathutils/
 │   │   └── pathutils.go            # Path manipulation utilities
-│   └── registry/
-│       └── registry.go             # Windows Registry operations
+│   ├── registry/
+│   │   └── registry.go             # Windows Registry operations
+│   └── telemetry/
+│       └── telemetry.go            # OpenTelemetry tracing support
 ├── docs/
 ├── go.mod                          # Go module definition
 └── go.sum                          # Go dependencies
