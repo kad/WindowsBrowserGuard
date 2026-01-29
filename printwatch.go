@@ -913,49 +913,34 @@ func addToBlocklist(baseKeyPath, blocklistPath, extensionID string) error {
 
 func removeExtensionSettingsForID(baseKeyPath, extensionID string, state *RegState) {
 	fmt.Printf("  🔍 Checking for extension settings: %s\n", extensionID)
+	fmt.Printf("  📊 Scanning %d subkeys and %d values...\n", len(state.Subkeys), len(state.Values))
 	
 	// Find and remove settings at: *\*\3rdparty\extensions\{extension-id}
 	settingsToRemove := make(map[string]bool)
 	
-	// Check subkeys
+	// Check subkeys - look for any path containing both "3rdparty" and "extensions" and the extension ID
 	for subkeyPath := range state.Subkeys {
-		if contains(subkeyPath, "3rdparty\\extensions\\"+extensionID) || 
-		   contains(subkeyPath, "3rdparty/extensions/"+extensionID) {
-			settingsToRemove[subkeyPath] = true
-		}
+		// Check if this path contains 3rdparty, extensions, and our extension ID
+		has3rdparty := contains(subkeyPath, "3rdparty")
+		hasExtensions := contains(subkeyPath, "extensions")
+		hasExtensionID := contains(subkeyPath, extensionID)
 		
-		// Also check if subkey path ends with the extension ID after "extensions"
-		if contains(subkeyPath, "3rdparty\\extensions") || contains(subkeyPath, "3rdparty/extensions") {
-			parts := []string{}
-			current := ""
-			for i := 0; i < len(subkeyPath); i++ {
-				if subkeyPath[i] == '\\' {
-					if current != "" {
-						parts = append(parts, current)
-						current = ""
-					}
-				} else {
-					current += string(subkeyPath[i])
-				}
-			}
-			if current != "" {
-				parts = append(parts, current)
-			}
-			
-			for i := 0; i < len(parts)-1; i++ {
-				if parts[i] == "extensions" && parts[i+1] == extensionID {
-					settingsToRemove[subkeyPath] = true
-					break
-				}
-			}
+		if has3rdparty && hasExtensions && hasExtensionID {
+			fmt.Printf("  🎯 Found matching subkey: %s\n", subkeyPath)
+			settingsToRemove[subkeyPath] = true
 		}
 	}
 	
 	// Check values
 	for valuePath := range state.Values {
-		if contains(valuePath, "3rdparty\\extensions\\"+extensionID) || 
-		   contains(valuePath, "3rdparty/extensions/"+extensionID) {
-			// Extract the settings key path (up to and including the extension ID)
+		has3rdparty := contains(valuePath, "3rdparty")
+		hasExtensions := contains(valuePath, "extensions")
+		hasExtensionID := contains(valuePath, extensionID)
+		
+		if has3rdparty && hasExtensions && hasExtensionID {
+			fmt.Printf("  🎯 Found matching value: %s\n", valuePath)
+			
+			// Extract the extension settings key path (up to and including the extension ID)
 			parts := []string{}
 			current := ""
 			for i := 0; i < len(valuePath); i++ {
@@ -972,16 +957,17 @@ func removeExtensionSettingsForID(baseKeyPath, extensionID string, state *RegSta
 				parts = append(parts, current)
 			}
 			
-			// Build path up to extension ID
+			// Build path up to and including extension ID
 			for i := 0; i < len(parts); i++ {
-				if parts[i] == "extensions" && i+1 < len(parts) && parts[i+1] == extensionID {
+				if parts[i] == extensionID {
 					settingsPath := ""
-					for j := 0; j <= i+1; j++ {
+					for j := 0; j <= i; j++ {
 						if j > 0 {
 							settingsPath += "\\"
 						}
 						settingsPath += parts[j]
 					}
+					fmt.Printf("  📍 Extracted settings path: %s\n", settingsPath)
 					settingsToRemove[settingsPath] = true
 					break
 				}
@@ -994,9 +980,11 @@ func removeExtensionSettingsForID(baseKeyPath, extensionID string, state *RegSta
 		return
 	}
 	
+	fmt.Printf("  🗑️  Found %d setting path(s) to remove\n", len(settingsToRemove))
+	
 	// Delete the settings
 	for settingsPath := range settingsToRemove {
-		fmt.Printf("  🗑️  Removing extension settings: %s\n", settingsPath)
+		fmt.Printf("  🗑️  Deleting extension settings: %s\n", settingsPath)
 		err := deleteRegistryKeyRecursive(baseKeyPath, settingsPath)
 		if err != nil {
 			fmt.Printf("  ⚠️  Failed to delete settings: %v\n", err)
@@ -1004,6 +992,13 @@ func removeExtensionSettingsForID(baseKeyPath, extensionID string, state *RegSta
 			fmt.Printf("  ✓ Successfully removed settings for %s\n", extensionID)
 			// Remove from state
 			delete(state.Subkeys, settingsPath)
+			// Remove all child keys and values
+			for keyPath := range state.Subkeys {
+				if len(keyPath) > len(settingsPath) && 
+				   keyPath[:len(settingsPath)] == settingsPath {
+					delete(state.Subkeys, keyPath)
+				}
+			}
 			for valName := range state.Values {
 				if len(valName) > len(settingsPath) && 
 				   valName[:len(settingsPath)] == settingsPath {
@@ -1230,18 +1225,24 @@ func cleanupAllowlists(keyPath string, state *RegState) {
 func getBlockedExtensionIDs(keyPath string, state *RegState) map[string]bool {
 	blockedIDs := make(map[string]bool)
 	
+	fmt.Println("  📋 Scanning for blocked extension IDs...")
+	
 	// Find all blocklist keys and read their values
 	for subkeyPath := range state.Subkeys {
 		if contains(subkeyPath, "ExtensionInstallBlocklist") {
 			fullPath := keyPath + "\\" + subkeyPath
+			fmt.Printf("  🔍 Found blocklist: %s\n", subkeyPath)
 			values, err := readKeyValues("", fullPath)
 			if err == nil {
-				for _, valueData := range values {
+				for valueName, valueData := range values {
 					extensionID := extractExtensionIDFromValue(valueData)
 					if extensionID != "" {
+						fmt.Printf("    ├─ %s: %s\n", valueName, extensionID)
 						blockedIDs[extensionID] = true
 					}
 				}
+			} else {
+				fmt.Printf("    ⚠️  Could not read values: %v\n", err)
 			}
 		}
 	}
@@ -1253,6 +1254,7 @@ func getBlockedExtensionIDs(keyPath string, state *RegState) map[string]bool {
 		   value.Data == "blocked" {
 			extensionID := extractFirefoxExtensionID(valuePath)
 			if extensionID != "" {
+				fmt.Printf("  🦊 Firefox blocked: %s\n", extensionID)
 				blockedIDs[extensionID] = true
 			}
 		}
@@ -1266,149 +1268,35 @@ func cleanupExtensionSettings(keyPath string, state *RegState) {
 		return
 	}
 
+	fmt.Println("\n========================================")
+	fmt.Println("Cleaning up extension settings...")
+	fmt.Println("========================================")
 	fmt.Println("Checking for extension settings of blocked extensions...")
+	fmt.Println("Note: This removes settings for ALL extensions in blocklists,")
+	fmt.Println("      regardless of whether they were added via forcelist or manually.")
 	
-	// Get all blocked extension IDs
+	// Get all blocked extension IDs from blocklists
 	blockedIDs := getBlockedExtensionIDs(keyPath, state)
 	
 	if len(blockedIDs) == 0 {
 		fmt.Println("✓ No blocked extensions found")
+		fmt.Println("========================================\n")
 		return
 	}
 	
-	fmt.Printf("Found %d blocked extension ID(s)\n", len(blockedIDs))
-	
-	settingsFound := false
-	settingsToRemove := make(map[string]bool)
-	
-	// Find Chrome extension settings at: *\*\3rdparty\extensions\{extension-id}
-	// Example: Google\Chrome\3rdparty\extensions\{id} or Microsoft\Edge\3rdparty\extensions\{id}
-	for subkeyPath := range state.Subkeys {
-		if contains(subkeyPath, "3rdparty\\extensions") || contains(subkeyPath, "3rdparty/extensions") {
-			// Extract the extension ID from the path
-			// Path format: ...\\3rdparty\\extensions\\{extension-id}
-			parts := []string{}
-			current := ""
-			for i := 0; i < len(subkeyPath); i++ {
-				if subkeyPath[i] == '\\' {
-					if current != "" {
-						parts = append(parts, current)
-						current = ""
-					}
-				} else {
-					current += string(subkeyPath[i])
-				}
-			}
-			if current != "" {
-				parts = append(parts, current)
-			}
-			
-			// Find the extension ID (part after "extensions")
-			for i := 0; i < len(parts)-1; i++ {
-				if parts[i] == "extensions" && i+1 < len(parts) {
-					possibleID := parts[i+1]
-					if blockedIDs[possibleID] {
-						settingsFound = true
-						settingsToRemove[subkeyPath] = true
-						break
-					}
-				}
-			}
-		}
+	fmt.Printf("\nFound %d blocked extension ID(s):\n", len(blockedIDs))
+	for id := range blockedIDs {
+		fmt.Printf("  - %s\n", id)
 	}
 	
-	// Also check values under 3rdparty\extensions
-	for valuePath := range state.Values {
-		if contains(valuePath, "3rdparty\\extensions") || contains(valuePath, "3rdparty/extensions") {
-			parts := []string{}
-			current := ""
-			for i := 0; i < len(valuePath); i++ {
-				if valuePath[i] == '\\' {
-					if current != "" {
-						parts = append(parts, current)
-						current = ""
-					}
-				} else {
-					current += string(valuePath[i])
-				}
-			}
-			if current != "" {
-				parts = append(parts, current)
-			}
-			
-			for i := 0; i < len(parts)-1; i++ {
-				if parts[i] == "extensions" && i+1 < len(parts) {
-					possibleID := parts[i+1]
-					if blockedIDs[possibleID] {
-						// Mark the extension's settings key for removal
-						// Find the key path (everything up to the extension ID, inclusive)
-						targetPath := ""
-						for j := 0; j <= i+1; j++ {
-							if j > 0 {
-								targetPath += "\\"
-							}
-							targetPath += parts[j]
-						}
-						settingsToRemove[targetPath] = true
-						break
-					}
-				}
-			}
-		}
+	// Use removeExtensionSettingsForID for each blocked extension
+	for extensionID := range blockedIDs {
+		fmt.Printf("\n[CHECKING SETTINGS FOR BLOCKED EXTENSION]\n")
+		fmt.Printf("Extension ID: %s\n", extensionID)
+		removeExtensionSettingsForID(keyPath, extensionID, state)
 	}
 	
-	if !settingsFound {
-		fmt.Println("✓ No extension settings found for blocked extensions")
-		return
-	}
-	
-	// Remove the settings keys
-	for settingsPath := range settingsToRemove {
-		fmt.Printf("\n[REMOVING EXTENSION SETTINGS]\n")
-		fmt.Printf("Path: %s\n", settingsPath)
-		
-		// Try to determine which extension ID this is for
-		parts := []string{}
-		current := ""
-		for i := 0; i < len(settingsPath); i++ {
-			if settingsPath[i] == '\\' {
-				if current != "" {
-					parts = append(parts, current)
-					current = ""
-				}
-			} else {
-				current += string(settingsPath[i])
-			}
-		}
-		if current != "" {
-			parts = append(parts, current)
-		}
-		
-		for i := 0; i < len(parts)-1; i++ {
-			if parts[i] == "extensions" && i+1 < len(parts) && blockedIDs[parts[i+1]] {
-				fmt.Printf("Extension ID: %s (blocked)\n", parts[i+1])
-				break
-			}
-		}
-		
-		fmt.Printf("🗑️  Deleting extension settings: %s\n", settingsPath)
-		err := deleteRegistryKeyRecursive(keyPath, settingsPath)
-		if err != nil {
-			fmt.Printf("❌ Failed to delete settings: %v\n", err)
-		} else {
-			fmt.Printf("✓ Successfully deleted extension settings\n")
-			// Remove from state
-			delete(state.Subkeys, settingsPath)
-			for valName := range state.Values {
-				if len(valName) > len(settingsPath) && 
-				   valName[:len(settingsPath)] == settingsPath {
-					delete(state.Values, valName)
-				}
-			}
-		}
-	}
-	
-	fmt.Println()
+	fmt.Println("========================================\n")
 }
 
 func main() {
