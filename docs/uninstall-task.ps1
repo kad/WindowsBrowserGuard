@@ -11,13 +11,13 @@ if (-not $isAdmin) {
 }
 
 # Configuration
-$taskName = "RegistryExtensionMonitor"
+$taskName = "WindowsBrowserGuard"
 $scriptDir = $PSScriptRoot
-$wrapperPath = Join-Path $scriptDir "printwatch-wrapper.ps1"
-$logPath = Join-Path $scriptDir "printwatch-log.txt"
+$wrapperPath = Join-Path $scriptDir "WindowsBrowserGuard-wrapper.ps1"
+$logPath = Join-Path $scriptDir "WindowsBrowserGuard-log.txt"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Registry Extension Monitor Uninstaller" -ForegroundColor Cyan
+Write-Host "Windows Browser Guard Uninstaller" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -46,7 +46,7 @@ if (-not $existingTask) {
 }
 
 # Check if process is running
-$process = Get-Process -Name "printwatch" -ErrorAction SilentlyContinue
+$process = Get-Process -Name "WindowsBrowserGuard" -ErrorAction SilentlyContinue
 if ($process) {
     Write-Host ""
     Write-Host "⚠️  Monitor process is still running (PID: $($process.Id))" -ForegroundColor Yellow
@@ -54,7 +54,7 @@ if ($process) {
     if ($stopProcess -eq 'Y' -or $stopProcess -eq 'y') {
         Write-Host "Stopping process..." -ForegroundColor Cyan
         try {
-            Stop-Process -Name "printwatch" -Force -ErrorAction Stop
+            Stop-Process -Name "WindowsBrowserGuard" -Force -ErrorAction Stop
             Write-Host "✓ Process stopped" -ForegroundColor Green
         } catch {
             Write-Host "❌ Failed to stop process: $_" -ForegroundColor Red
@@ -99,8 +99,8 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Uninstallation Complete!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "The Registry Extension Monitor has been removed from startup" -ForegroundColor White
-Write-Host "The executable (printwatch.exe) has been kept and can be deleted manually" -ForegroundColor Gray
+Write-Host "Windows Browser Guard has been removed from startup" -ForegroundColor White
+Write-Host "The executable (WindowsBrowserGuard.exe) has been kept and can be deleted manually" -ForegroundColor Gray
 Write-Host ""
 
 Write-Host "Press any key to exit..."

@@ -12,21 +12,21 @@ if (-not $isAdmin) {
 
 # Configuration
 $scriptDir = $PSScriptRoot
-$exePath = Join-Path $scriptDir "printwatch.exe"
-$logPath = Join-Path $scriptDir "printwatch-log.txt"
-$wrapperPath = Join-Path $scriptDir "printwatch-wrapper.ps1"
-$taskName = "RegistryExtensionMonitor"
+$exePath = Join-Path $scriptDir "WindowsBrowserGuard.exe"
+$logPath = Join-Path $scriptDir "WindowsBrowserGuard-log.txt"
+$wrapperPath = Join-Path $scriptDir "WindowsBrowserGuard-wrapper.ps1"
+$taskName = "WindowsBrowserGuard"
 
 # Validate executable exists
 if (-not (Test-Path $exePath)) {
-    Write-Host "❌ Error: printwatch.exe not found at: $exePath" -ForegroundColor Red
-    Write-Host "Please ensure printwatch.exe is in the same directory as this script" -ForegroundColor Yellow
+    Write-Host "❌ Error: WindowsBrowserGuard.exe not found at: $exePath" -ForegroundColor Red
+    Write-Host "Please ensure WindowsBrowserGuard.exe is in the same directory as this script" -ForegroundColor Yellow
     pause
     exit 1
 }
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Registry Extension Monitor Installer" -ForegroundColor Cyan
+Write-Host "Windows Browser Guard Installer" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Executable: $exePath" -ForegroundColor Gray
@@ -52,7 +52,7 @@ if ($existingTask) {
 # Create wrapper script that redirects output to log file
 Write-Host "Creating wrapper script..." -ForegroundColor Cyan
 $wrapperScript = @"
-# Wrapper script for Registry Extension Monitor
+# Wrapper script for Windows Browser Guard
 # This script redirects program output to a log file
 
 `$exePath = '$exePath'
@@ -100,7 +100,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Installation Complete!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "The Registry Extension Monitor will:" -ForegroundColor White
+Write-Host "Windows Browser Guard will:" -ForegroundColor White
 Write-Host "  • Start automatically at your next login" -ForegroundColor Gray
 Write-Host "  • Run with Administrator privileges" -ForegroundColor Gray
 Write-Host "  • Monitor registry for extension installations" -ForegroundColor Gray
@@ -123,7 +123,7 @@ if ($startNow -eq 'Y' -or $startNow -eq 'y') {
     Start-Sleep -Seconds 2
     
     # Check if process is running
-    $process = Get-Process -Name "printwatch" -ErrorAction SilentlyContinue
+    $process = Get-Process -Name "WindowsBrowserGuard" -ErrorAction SilentlyContinue
     if ($process) {
         Write-Host "✓ Monitor is now running (PID: $($process.Id))" -ForegroundColor Green
     } else {

@@ -1,12 +1,12 @@
-# Registry Extension Monitor - Log Viewer Script
+# Windows Browser Guard - Log Viewer Script
 # This script provides an easy way to view monitor logs
 
 # Configuration
 $scriptDir = $PSScriptRoot
-$logPath = Join-Path $scriptDir "printwatch-log.txt"
+$logPath = Join-Path $scriptDir "WindowsBrowserGuard-log.txt"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Registry Extension Monitor - Log Viewer" -ForegroundColor Cyan
+Write-Host "Windows Browser Guard - Log Viewer" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -37,7 +37,7 @@ Write-Host "Modified: $($fileInfo.LastWriteTime)" -ForegroundColor Gray
 Write-Host ""
 
 # Check if process is running
-$process = Get-Process -Name "printwatch" -ErrorAction SilentlyContinue
+$process = Get-Process -Name "WindowsBrowserGuard" -ErrorAction SilentlyContinue
 if ($process) {
     Write-Host "✓ Monitor is running (PID: $($process.Id))" -ForegroundColor Green
 } else {

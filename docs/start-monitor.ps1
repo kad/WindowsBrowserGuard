@@ -14,30 +14,30 @@ if (-not $isAdmin) {
 
 # Configuration
 $scriptDir = $PSScriptRoot
-$exePath = Join-Path $scriptDir "printwatch.exe"
-$logPath = Join-Path $scriptDir "printwatch-log.txt"
+$exePath = Join-Path $scriptDir "WindowsBrowserGuard.exe"
+$logPath = Join-Path $scriptDir "WindowsBrowserGuard-log.txt"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Registry Extension Monitor - Manual Start" -ForegroundColor Cyan
+Write-Host "Windows Browser Guard - Manual Start" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Validate executable exists
 if (-not (Test-Path $exePath)) {
-    Write-Host "❌ Error: printwatch.exe not found at: $exePath" -ForegroundColor Red
-    Write-Host "Please ensure printwatch.exe is in the same directory as this script" -ForegroundColor Yellow
+    Write-Host "❌ Error: WindowsBrowserGuard.exe not found at: $exePath" -ForegroundColor Red
+    Write-Host "Please ensure WindowsBrowserGuard.exe is in the same directory as this script" -ForegroundColor Yellow
     pause
     exit 1
 }
 
 # Check if already running
-$existingProcess = Get-Process -Name "printwatch" -ErrorAction SilentlyContinue
+$existingProcess = Get-Process -Name "WindowsBrowserGuard" -ErrorAction SilentlyContinue
 if ($existingProcess) {
     Write-Host "⚠️  Monitor is already running (PID: $($existingProcess.Id))" -ForegroundColor Yellow
     $response = Read-Host "Do you want to stop it and restart? (Y/N)"
     if ($response -eq 'Y' -or $response -eq 'y') {
         Write-Host "Stopping existing process..." -ForegroundColor Cyan
-        Stop-Process -Name "printwatch" -Force
+        Stop-Process -Name "WindowsBrowserGuard" -Force
         Start-Sleep -Seconds 2
         Write-Host "✓ Existing process stopped" -ForegroundColor Green
     } else {
@@ -73,7 +73,7 @@ if ($choice -eq "1") {
     Start-Sleep -Seconds 2
     
     # Verify it started
-    $process = Get-Process -Name "printwatch" -ErrorAction SilentlyContinue
+    $process = Get-Process -Name "WindowsBrowserGuard" -ErrorAction SilentlyContinue
     if ($process) {
         Write-Host "✓ Monitor started successfully (PID: $($process.Id))" -ForegroundColor Green
         Write-Host ""
@@ -81,7 +81,7 @@ if ($choice -eq "1") {
         Write-Host "  Get-Content '$logPath' -Tail 50 -Wait" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "To stop the monitor:" -ForegroundColor Yellow
-        Write-Host "  Stop-Process -Name printwatch -Force" -ForegroundColor Cyan
+        Write-Host "  Stop-Process -Name WindowsBrowserGuard -Force" -ForegroundColor Cyan
     } else {
         Write-Host "❌ Failed to start monitor. Check the log file for errors." -ForegroundColor Red
         Write-Host "Log file: $logPath" -ForegroundColor Gray
