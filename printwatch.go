@@ -408,8 +408,7 @@ func printDiff(oldState, newState *RegState, keyPath string) {
 						forcelistKeyPath := name[:lastSlash]
 						
 						// Read ALL values from the forcelist key before deleting
-						fullKeyPath := keyPath + "\\" + forcelistKeyPath
-						allValues, err := readKeyValues("", fullKeyPath)
+						allValues, err := readKeyValues(keyPath, forcelistKeyPath)
 						if err != nil {
 							fmt.Printf("  ⚠️  Could not read forcelist values: %v\n", err)
 						} else {
@@ -1047,8 +1046,7 @@ func processExistingPolicies(keyPath string, state *RegState) {
 					forcelistKeyPath := valuePath[:lastSlash]
 					
 					// Read ALL values from the forcelist key before processing
-					fullKeyPath := keyPath + "\\" + forcelistKeyPath
-					allValues, err := readKeyValues("", fullKeyPath)
+					allValues, err := readKeyValues(keyPath, forcelistKeyPath)
 					if err != nil {
 						fmt.Printf("⚠️  Could not read forcelist values: %v\n", err)
 					} else {
@@ -1230,9 +1228,8 @@ func getBlockedExtensionIDs(keyPath string, state *RegState) map[string]bool {
 	// Find all blocklist keys and read their values
 	for subkeyPath := range state.Subkeys {
 		if contains(subkeyPath, "ExtensionInstallBlocklist") {
-			fullPath := keyPath + "\\" + subkeyPath
 			fmt.Printf("  🔍 Found blocklist: %s\n", subkeyPath)
-			values, err := readKeyValues("", fullPath)
+			values, err := readKeyValues(keyPath, subkeyPath)
 			if err == nil {
 				for valueName, valueData := range values {
 					extensionID := extractExtensionIDFromValue(valueData)
