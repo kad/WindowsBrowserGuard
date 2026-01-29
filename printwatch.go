@@ -1188,8 +1188,7 @@ func cleanupAllowlists(keyPath string, state *RegState) {
 		fmt.Printf("\n[REMOVING ALLOWLIST]\n")
 		fmt.Printf("Path: %s\n", allowlistPath)
 		
-		fullPath := keyPath + "\\" + allowlistPath
-		values, err := readKeyValues("", fullPath)
+		values, err := readKeyValues(keyPath, allowlistPath)
 		if err == nil && len(values) > 0 {
 			fmt.Printf("Found %d extension(s) in allowlist:\n", len(values))
 			for valueName, valueData := range values {
