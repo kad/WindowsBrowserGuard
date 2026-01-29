@@ -1,0 +1,65 @@
+package main
+
+import (
+	"fmt"
+	"syscall"
+	"time"
+
+	"golang.org/x/sys/windows"
+)
+
+func main() {
+	// Open the registry key to monitor
+	keyPath := `SOFTWARE\Policies`
+	key, err := syscall.UTF16PtrFromString(keyPath)
+	if err != nil {
+		fmt.Println("Error converting key path:", err)
+		return
+	}
+
+	var hKey windows.Handle
+	err = windows.RegOpenKeyEx(windows.HKEY_LOCAL_MACHINE, key, 0, windows.KEY_NOTIFY, &hKey)
+	if err != nil {
+		fmt.Println("Error opening registry key:", err)
+		return
+	}
+	defer windows.RegCloseKey(hKey)
+
+	// Create an event for notifications
+	event, err := windows.CreateEvent(nil, 0, 0, nil)
+	if err != nil {
+		fmt.Println("Error creating event:", err)
+		return
+	}
+	defer windows.CloseHandle(event)
+
+	// Start monitoring the registry key
+	err = windows.RegNotifyChangeKeyValue(hKey, true, windows.REG_NOTIFY_CHANGE_NAME|windows.REG_NOTIFY_CHANGE_LAST_SET, event, true)
+	if err != nil {
+		fmt.Println("Error setting up registry notification:", err)
+		return
+	}
+
+	fmt.Println("Monitoring registry changes...")
+
+	for {
+		// Wait for a change notification
+		status, err := windows.WaitForSingleObject(event, windows.INFINITE)
+		if err != nil {
+			fmt.Println("Error waiting for event:", err)
+			return
+		}
+
+		if status == windows.WAIT_OBJECT_0 {
+			fmt.Println("Registry key changed:", keyPath)
+			fmt.Println("Current time/date:", time.Now().Format(time.RFC3339))
+
+			// Re-arm the notification
+			err = windows.RegNotifyChangeKeyValue(hKey, true, windows.REG_NOTIFY_CHANGE_NAME|windows.REG_NOTIFY_CHANGE_LAST_SET, event, true)
+			if err != nil {
+				fmt.Println("Error re-arming registry notification:", err)
+				return
+			}
+		}
+	}
+}
