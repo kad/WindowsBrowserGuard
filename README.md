@@ -302,3 +302,29 @@ In addition to tracing, WindowsBrowserGuard exports structured logs to OTLP back
 - "Failed to open registry key" (Error)
 
 See **OPENTELEMETRY-LOGGING.md** for detailed documentation on logging setup, log-trace correlation, and backend integration.
+
+## OpenTelemetry Metrics
+
+WindowsBrowserGuard exports comprehensive metrics for monitoring and alerting:
+
+```powershell
+# Metrics automatically exported when using OTLP endpoint
+.\WindowsBrowserGuard.exe --otlp-endpoint localhost:4317 --otlp-insecure
+```
+
+**Available Metrics:**
+- `browser_guard.extensions.detected` - Counter of detected extensions
+- `browser_guard.extensions.blocked` - Counter of blocked extensions
+- `browser_guard.registry.operations` - Counter of registry operations
+- `browser_guard.registry.subkeys` - Gauge of monitored subkeys
+- `browser_guard.registry.values` - Gauge of monitored values
+- `browser_guard.operation.duration` - Histogram of operation durations
+
+**Use Cases:**
+- ✅ Track extension detection trends over time
+- ✅ Monitor registry operation success rates
+- ✅ Alert on performance degradation
+- ✅ Visualize browser security posture in Grafana
+- ✅ Correlate metrics with traces and logs
+
+See **OPENTELEMETRY-METRICS.md** for detailed documentation on metrics, dashboard examples, and alerting rules.

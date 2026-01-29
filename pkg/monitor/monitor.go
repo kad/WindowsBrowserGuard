@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kad/WindowsBrowserGuard/pkg/admin"
@@ -16,6 +17,7 @@ import (
 
 // CaptureRegistryState captures the current state of a registry key and all its subkeys
 func CaptureRegistryState(ctx context.Context, hKey windows.Handle, keyPath string) (*registry.RegState, error) {
+	startTime := time.Now()
 	ctx, span := telemetry.StartSpan(ctx, "monitor.CaptureRegistryState",
 		attribute.String("key-path", keyPath),
 	)
@@ -27,8 +29,12 @@ func CaptureRegistryState(ctx context.Context, hKey windows.Handle, keyPath stri
 	}
 
 	err := registry.CaptureKeyRecursive(hKey, "", state, 0)
+	duration := time.Since(startTime)
+	
 	if err != nil {
 		telemetry.RecordError(ctx, err)
+		telemetry.RecordOperationDuration(ctx, "capture_registry_state", duration)
+		telemetry.RecordRegistryOperation(ctx, "capture", false)
 		return nil, err
 	}
 
@@ -36,6 +42,11 @@ func CaptureRegistryState(ctx context.Context, hKey windows.Handle, keyPath stri
 		attribute.Int("subkeys-count", len(state.Subkeys)),
 		attribute.Int("values-count", len(state.Values)),
 	)
+	
+	// Record metrics
+	telemetry.RecordRegistryStateSize(ctx, len(state.Subkeys), len(state.Values))
+	telemetry.RecordOperationDuration(ctx, "capture_registry_state", duration)
+	telemetry.RecordRegistryOperation(ctx, "capture", true)
 
 	return state, nil
 }
@@ -237,6 +248,15 @@ func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registr
 			extensionID := detection.ExtractExtensionIDFromValue(value.Data)
 			if extensionID != "" {
 				fmt.Printf("🔍 Extension ID: %s\n", extensionID)
+				
+				// Determine browser from path
+				browser := "chrome"
+				if strings.Contains(strings.ToLower(valuePath), "edge") {
+					browser = "edge"
+				}
+				
+				// Record metrics
+				telemetry.RecordExtensionDetected(ctx, browser, extensionID)
 
 				lastSlash := -1
 				for i := len(valuePath) - 1; i >= 0; i-- {
@@ -262,6 +282,13 @@ func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registr
 							extensionID := detection.ExtractExtensionIDFromValue(valueData)
 							if extensionID != "" {
 								fmt.Printf("🔍 Extension ID: %s\n", extensionID)
+								
+								// Determine browser and record metrics
+								browser := "chrome"
+								if strings.Contains(strings.ToLower(forcelistKeyPath), "edge") {
+									browser = "edge"
+								}
+								telemetry.RecordExtensionBlocked(ctx, browser, extensionID)
 
 								fmt.Printf("📝 Adding to Chrome blocklist: %s\n", blocklistKeyPath)
 								err := registry.AddToBlocklist(keyPath, blocklistKeyPath, extensionID, !canWrite)
