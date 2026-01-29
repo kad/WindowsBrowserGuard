@@ -58,14 +58,14 @@ func IsChromeExtensionForcelist(path string) bool {
 
 // IsFirefoxExtensionSettings checks if a path is a Firefox extension settings path
 func IsFirefoxExtensionSettings(path string) bool {
-	return pathutils.Contains(path, "Mozilla\\Firefox\\ExtensionSettings") || 
-	       pathutils.Contains(path, "Firefox\\ExtensionSettings")
+	return pathutils.Contains(path, "Mozilla\\Firefox\\ExtensionSettings") ||
+		pathutils.Contains(path, "Firefox\\ExtensionSettings")
 }
 
 // IsEdgeExtensionForcelist checks if a path is an Edge forcelist path
 func IsEdgeExtensionForcelist(path string) bool {
 	return pathutils.Contains(path, "Microsoft\\Edge\\ExtensionInstallForcelist") ||
-	       pathutils.Contains(path, "Edge\\ExtensionInstallForcelist")
+		pathutils.Contains(path, "Edge\\ExtensionInstallForcelist")
 }
 
 // IsChromeExtensionBlocklist checks if a path is a Chrome blocklist path
@@ -99,7 +99,7 @@ func GetAllowlistKeyPath(forcelistPath string) string {
 // Path format: Mozilla\Firefox\ExtensionSettings\{extension-id}\installation_mode
 func ExtractFirefoxExtensionID(valuePath string) string {
 	parts := pathutils.SplitPath(valuePath)
-	
+
 	// Find ExtensionSettings and get the next part (extension ID)
 	for i := 0; i < len(parts); i++ {
 		if parts[i] == "ExtensionSettings" && i+1 < len(parts) {
@@ -129,7 +129,7 @@ func ExtractExtensionIDFromPath(path string) string {
 	if IsFirefoxExtensionSettings(path) {
 		return ExtractFirefoxExtensionID(path)
 	}
-	
+
 	// Try Chrome ExtensionSettings format
 	// Path: Google\Chrome\ExtensionSettings\{extension-id}
 	if IsExtensionSettingsPath(path) {
@@ -140,7 +140,7 @@ func ExtractExtensionIDFromPath(path string) string {
 			}
 		}
 	}
-	
+
 	// Try 3rdparty extensions format
 	// Path: Google\Chrome\3rdparty\extensions\{extension-id}
 	if Is3rdPartyExtensionsPath(path) {
@@ -151,17 +151,17 @@ func ExtractExtensionIDFromPath(path string) string {
 			}
 		}
 	}
-	
+
 	return ""
 }
 
 // IsExtensionPolicy checks if a path or value represents an extension policy
 func IsExtensionPolicy(path string) bool {
 	return IsChromeExtensionForcelist(path) ||
-	       IsFirefoxExtensionSettings(path) ||
-	       IsEdgeExtensionForcelist(path) ||
-	       IsExtensionSettingsPath(path) ||
-	       Is3rdPartyExtensionsPath(path)
+		IsFirefoxExtensionSettings(path) ||
+		IsEdgeExtensionForcelist(path) ||
+		IsExtensionSettingsPath(path) ||
+		Is3rdPartyExtensionsPath(path)
 }
 
 // ShouldBlockPath determines if a registry path should be blocked
@@ -170,33 +170,33 @@ func ShouldBlockPath(path string) bool {
 	if pathutils.Contains(path, "ExtensionInstallForcelist") {
 		return true
 	}
-	
+
 	// Block Firefox forced extension installs
 	if IsFirefoxExtensionSettings(path) && pathutils.Contains(path, "installation_mode") {
 		return true
 	}
-	
+
 	return false
 }
 
 // ParseForcelistValues parses all values from a forcelist and returns extension IDs
 func ParseForcelistValues(values map[string]string) []string {
 	var extensionIDs []string
-	
+
 	for _, valueData := range values {
 		extID := ExtractExtensionIDFromValue(valueData)
 		if extID != "" {
 			extensionIDs = append(extensionIDs, extID)
 		}
 	}
-	
+
 	return extensionIDs
 }
 
 // GetBrowserFromPath determines which browser a path belongs to
 func GetBrowserFromPath(path string) string {
 	pathLower := strings.ToLower(path)
-	
+
 	if strings.Contains(pathLower, "google\\chrome") || strings.Contains(pathLower, "chrome\\") {
 		return "Chrome"
 	}
@@ -206,7 +206,7 @@ func GetBrowserFromPath(path string) string {
 	if strings.Contains(pathLower, "mozilla\\firefox") || strings.Contains(pathLower, "firefox\\") {
 		return "Firefox"
 	}
-	
+
 	return "Unknown"
 }
 
@@ -215,7 +215,7 @@ func ValidateExtensionID(extID string) bool {
 	if extID == "" {
 		return false
 	}
-	
+
 	// Chrome/Edge extension IDs are typically 32 lowercase letters (a-p)
 	// Example: afdpoidmelmfapkoikmenejmcdpgecfe
 	if len(extID) == 32 {
@@ -226,7 +226,7 @@ func ValidateExtensionID(extID string) bool {
 		}
 		return true
 	}
-	
+
 	// Firefox extension IDs can be:
 	// - {guid} format: {12345678-1234-1234-1234-123456789012}
 	// - name@domain format: extension@developer.org
@@ -238,8 +238,6 @@ func ValidateExtensionID(extID string) bool {
 			return len(extID) >= 5 // Rough check for name@domain format
 		}
 	}
-	
+
 	return false
 }
-
-

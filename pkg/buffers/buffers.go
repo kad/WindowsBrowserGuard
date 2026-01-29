@@ -16,7 +16,7 @@ var (
 			return &buf
 		},
 	}
-	
+
 	// Pool for UTF-16 name buffers for value names (16384 uint16)
 	largeNameBufferPool = sync.Pool{
 		New: func() interface{} {
@@ -24,7 +24,7 @@ var (
 			return &buf
 		},
 	}
-	
+
 	// Pool for data buffers (16KB for values)
 	dataBufferPool = sync.Pool{
 		New: func() interface{} {
@@ -32,7 +32,7 @@ var (
 			return &buf
 		},
 	}
-	
+
 	// Pool for large data buffers (64KB for large values)
 	largeDataBufferPool = sync.Pool{
 		New: func() interface{} {

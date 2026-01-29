@@ -9,9 +9,9 @@ import (
 )
 
 var (
-	shell32            = syscall.NewLazyDLL("shell32.dll")
-	shellExecuteW      = shell32.NewProc("ShellExecuteW")
-	
+	shell32       = syscall.NewLazyDLL("shell32.dll")
+	shellExecuteW = shell32.NewProc("ShellExecuteW")
+
 	kernel32           = syscall.NewLazyDLL("kernel32.dll")
 	getModuleFileNameW = kernel32.NewProc("GetModuleFileNameW")
 )
@@ -102,7 +102,7 @@ func CheckAdminAndElevate(dryRun bool) bool {
 		fmt.Println("   All write/delete operations will be simulated\n")
 		return false
 	}
-	
+
 	if !IsAdmin() {
 		fmt.Println("⚠️  WARNING: Not running as Administrator")
 		fmt.Println("Registry deletion requires elevated privileges.")

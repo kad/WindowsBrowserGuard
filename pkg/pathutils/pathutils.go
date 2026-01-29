@@ -80,11 +80,11 @@ func BuildPath(components ...string) string {
 			nonEmpty = append(nonEmpty, c)
 		}
 	}
-	
+
 	if len(nonEmpty) == 0 {
 		return ""
 	}
-	
+
 	var builder strings.Builder
 	totalLen := 0
 	for _, c := range nonEmpty {
@@ -92,7 +92,7 @@ func BuildPath(components ...string) string {
 	}
 	totalLen += len(nonEmpty) - 1 // for separators
 	builder.Grow(totalLen)
-	
+
 	for i, component := range nonEmpty {
 		if i > 0 {
 			builder.WriteString("\\")
@@ -109,7 +109,7 @@ func ReplacePathComponent(path, old, new string) string {
 	oldLower := strings.ToLower(old)
 	result := strings.Builder{}
 	remaining := path
-	
+
 	for {
 		lowerRemaining := strings.ToLower(remaining)
 		idx := strings.Index(lowerRemaining, oldLower)
@@ -117,12 +117,11 @@ func ReplacePathComponent(path, old, new string) string {
 			result.WriteString(remaining)
 			break
 		}
-		
+
 		result.WriteString(remaining[:idx])
 		result.WriteString(new)
 		remaining = remaining[idx+len(old):]
 	}
-	
+
 	return result.String()
 }
-

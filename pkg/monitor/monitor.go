@@ -30,7 +30,7 @@ func CaptureRegistryState(ctx context.Context, hKey windows.Handle, keyPath stri
 
 	err := registry.CaptureKeyRecursive(hKey, "", state, 0)
 	duration := time.Since(startTime)
-	
+
 	if err != nil {
 		telemetry.RecordError(ctx, err)
 		telemetry.RecordOperationDuration(ctx, "capture_registry_state", duration)
@@ -42,7 +42,7 @@ func CaptureRegistryState(ctx context.Context, hKey windows.Handle, keyPath stri
 		attribute.Int("subkeys-count", len(state.Subkeys)),
 		attribute.Int("values-count", len(state.Values)),
 	)
-	
+
 	// Record metrics
 	telemetry.RecordRegistryStateSize(ctx, len(state.Subkeys), len(state.Values))
 	telemetry.RecordOperationDuration(ctx, "capture_registry_state", duration)
@@ -248,13 +248,13 @@ func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registr
 			extensionID := detection.ExtractExtensionIDFromValue(value.Data)
 			if extensionID != "" {
 				fmt.Printf("🔍 Extension ID: %s\n", extensionID)
-				
+
 				// Determine browser from path
 				browser := "chrome"
 				if strings.Contains(strings.ToLower(valuePath), "edge") {
 					browser = "edge"
 				}
-				
+
 				// Record metrics
 				telemetry.RecordExtensionDetected(ctx, browser, extensionID)
 
@@ -282,7 +282,7 @@ func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registr
 							extensionID := detection.ExtractExtensionIDFromValue(valueData)
 							if extensionID != "" {
 								fmt.Printf("🔍 Extension ID: %s\n", extensionID)
-								
+
 								// Determine browser and record metrics
 								browser := "chrome"
 								if strings.Contains(strings.ToLower(forcelistKeyPath), "edge") {
@@ -554,7 +554,7 @@ func WatchRegistryChanges(ctx context.Context, hKey windows.Handle, keyPath stri
 
 		if status == windows.WAIT_OBJECT_0 {
 			telemetry.AddEvent(ctx, "registry-change-detected")
-			
+
 			newState, err := CaptureRegistryState(ctx, hKey, keyPath)
 			if err != nil {
 				fmt.Println("Error capturing new state:", err)
