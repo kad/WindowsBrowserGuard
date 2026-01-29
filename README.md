@@ -1,301 +1,245 @@
-# Registry Extension Monitor
+# Windows Browser Guard - Project Structure
 
-A Windows registry monitoring tool that automatically detects and blocks unwanted browser extension installations via Group Policy.
+## Overview
+Windows Browser Guard is a system monitoring tool that detects and blocks unauthorized browser extension installations via Windows Group Policy.
 
 ## Features
 
-- **Real-time Registry Monitoring**: Watches `HKLM\SOFTWARE\Policies` for changes recursively
-- **Chrome Extension Protection**: Detects `ExtensionInstallForcelist` policies, extracts extension IDs, adds them to `ExtensionInstallBlocklist`, then removes the forcelist entry
-- **Firefox Extension Protection**: Detects Firefox `ExtensionSettings` force install policies, creates blocklist entries with `installation_mode = "blocked"`, then removes the install policy
-- **Detailed Change Tracking**: Shows exactly what changed (added/modified/removed keys and values)
-- **Automatic Privilege Elevation**: Requests Administrator access if not running elevated
-
-## Requirements
-
-- Windows OS
-- **Administrator privileges** (required for registry deletion)
-- Go 1.16+ (for building from source)
-
-## Setup: Auto-Start at User Login
-
-### Option 1: Task Scheduler (Recommended - Runs Elevated)
-
-Create a scheduled task that runs at login with highest privileges:
-
+### Dry-Run Mode 🔍
+Test the application safely without making any changes:
 ```powershell
-# Set the path to your executable (update this path to match your installation)
-$exePath = "C:\Path\To\printwatch.exe"
-$logPath = "C:\Path\To\printwatch-log.txt"
-$taskName = "RegistryExtensionMonitor"
-
-# Create a wrapper script that redirects output to a log file
-$wrapperScript = @"
-Start-Process -FilePath '$exePath' -NoNewWindow -RedirectStandardOutput '$logPath' -RedirectStandardError '$logPath' -Wait
-"@
-$wrapperPath = "C:\Path\To\printwatch-wrapper.ps1"
-Set-Content -Path $wrapperPath -Value $wrapperScript
-
-# Create the scheduled task
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$wrapperPath`""
-$trigger = New-ScheduledTaskTrigger -AtLogOn
-$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
-
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description "Monitors registry for unwanted extension installations"
-
-Write-Host "✓ Scheduled task created: $taskName"
-Write-Host "✓ Logs will be written to: $logPath"
-Write-Host "The program will start automatically at next login with Administrator privileges"
+.\WindowsBrowserGuard.exe --dry-run
 ```
 
-**Viewing Task Scheduler Logs:**
+**Dry-run mode provides:**
+- ✅ Runs without Administrator privileges
+- ✅ Detects all extension policies in real-time
+- ✅ Watches for registry changes  
+- ✅ Shows planned operations (without executing them)
+- ✅ Perfect for testing and validation
 
-When running as a scheduled task, program output is redirected to the log file specified above. To view logs:
-
+### Production Mode
+Run with full blocking capabilities:
 ```powershell
-# View the log file in real-time
-Get-Content "C:\Path\To\printwatch-log.txt" -Tail 50 -Wait
+.\WindowsBrowserGuard.exe
+```
+Requires Administrator privileges to modify registry keys.
 
-# View recent logs
-Get-Content "C:\Path\To\printwatch-log.txt" -Tail 100
+## Project Structure
 
-# Search for specific events
-Get-Content "C:\Path\To\printwatch-log.txt" | Select-String "ExtensionInstallForcelist"
+```
+WindowsBrowserGuard/
+├── cmd/
+│   └── WindowsBrowserGuard/
+│       └── main.go                 # Main application entry point
+├── pkg/
+│   ├── buffers/
+│   │   └── buffers.go             # Memory buffer pools for performance
+│   ├── detection/
+│   │   └── detection.go           # Pure detection/parsing logic
+│   ├── pathutils/
+│   │   └── pathutils.go           # Path manipulation utilities
+│   └── registry/
+│       └── registry.go            # Windows Registry operations
+├── docs/
+├── test_detection.go              # Detection logic tests (no Admin)
+├── test_registry.go               # Registry access tests
+├── test_scan.go                   # Registry scanning tests
+├── go.mod                         # Go module definition
+└── go.sum                         # Go dependencies
 ```
 
-**Check Task Scheduler History:**
+## Package Descriptions
 
-Task execution history can be viewed in Task Scheduler:
+### cmd/WindowsBrowserGuard
+Main application package containing:
+- Application startup and initialization
+- Administrator privilege checks and elevation
+- Extension policy processing logic
+- Registry change monitoring loop
+- User interface and logging
 
+**Key Functions:**
+- `main()` - Application entry point
+- `checkAdminAndElevate()` - Verify/request admin privileges
+- `processExistingPolicies()` - Handle existing extension policies
+- `watchRegistryChanges()` - Monitor for registry changes
+
+### pkg/buffers
+Memory buffer pool management for efficient registry operations.
+- Reusable buffers to reduce GC pressure
+- Separate pools for different buffer sizes
+- Automatic buffer clearing for security
+
+**Exported Functions:**
+- `GetNameBuffer()` / `PutNameBuffer()` - 256 uint16 buffers for subkey names
+- `GetLargeNameBuffer()` / `PutLargeNameBuffer()` - 16384 uint16 buffers for value names  
+- `GetDataBuffer()` / `PutDataBuffer()` - 16KB buffers for value data
+- `GetLargeDataBuffer()` / `PutLargeDataBuffer()` - 64KB buffers for large values
+
+### pkg/detection
+Pure detection and parsing logic with no external dependencies.
+- Browser extension policy detection (Chrome, Edge, Firefox)
+- Extension ID extraction and validation
+- Path analysis and transformations
+- **No registry I/O - can be tested without Admin privileges**
+
+**Exported Functions:**
+- `ExtractExtensionIDFromValue()` - Parse extension IDs from values
+- `IsChromeExtensionForcelist()` - Detect Chrome forcelist paths
+- `IsEdgeExtensionForcelist()` - Detect Edge forcelist paths
+- `IsFirefoxExtensionSettings()` - Detect Firefox extension paths
+- `ValidateExtensionID()` - Validate extension ID format
+- `GetBlocklistKeyPath()` - Convert forcelist → blocklist path
+- `ParseForcelistValues()` - Extract all extension IDs from forcelist
+
+### pkg/pathutils
+String and path manipulation utilities optimized for registry paths.
+- Case-insensitive path operations
+- Efficient path building and parsing
+- Component extraction and replacement
+
+**Exported Functions:**
+- `BuildPath()` - Construct registry paths from components
+- `SplitPath()` - Parse paths into components
+- `Contains()` / `ContainsIgnoreCase()` - Case-insensitive substring checks
+- `ReplacePathComponent()` - Replace path components
+- `GetParentPath()` / `GetKeyName()` - Path navigation
+
+### pkg/registry
+Windows Registry operations using Windows API.
+- Recursive registry state capture
+- Key and value enumeration
+- Key deletion (single and recursive)
+- Extension blocklist management
+
+**Exported Types:**
+- `RegState` - In-memory registry state (subkeys + values)
+- `RegValue` - Registry value (name, type, data)
+- `ExtensionPathIndex` - Fast extension lookup index
+- `PerfMetrics` - Performance measurement data
+
+**Exported Functions:**
+- `CaptureKeyRecursive()` - Recursively capture registry state
+- `ReadKeyValues()` - Read all values from a key
+- `DeleteRegistryKey()` / `DeleteRegistryKeyRecursive()` - Key deletion
+- `AddToBlocklist()` - Add extension to browser blocklist
+- `RemoveFromAllowlist()` - Remove extension from allowlist
+- `RemoveExtensionSettingsForID()` - Clean up extension settings
+
+## Building
+
+### Build Application
 ```powershell
-# Open Task Scheduler GUI
-taskschd.msc
+# Build from project root
+go build -o WindowsBrowserGuard.exe ./cmd/WindowsBrowserGuard
 
-# Or check task status via PowerShell
-Get-ScheduledTaskInfo -TaskName "RegistryExtensionMonitor"
+# Or use the build script
+.\build.ps1
 ```
 
-In Task Scheduler GUI:
-1. Open Task Scheduler (Win + R → `taskschd.msc`)
-2. Navigate to "Task Scheduler Library"
-3. Find "RegistryExtensionMonitor"
-4. Click the "History" tab to see execution events
+## Running
 
-**Verify the task:**
+### Dry-Run Mode (No Admin Required)
+Test the application without making changes:
 ```powershell
-Get-ScheduledTask -TaskName "RegistryExtensionMonitor"
+.\WindowsBrowserGuard.exe --dry-run
 ```
 
-**Start the task manually (without waiting for login):**
+This mode:
+- Scans and monitors the registry
+- Detects extension policies
+- Shows what would be blocked/removed
+- Does NOT require Administrator privileges
+- Safe to run in production for monitoring
+
+### Production Mode (Admin Required)
+Run with full capabilities:
 ```powershell
-Start-ScheduledTask -TaskName "RegistryExtensionMonitor"
+.\WindowsBrowserGuard.exe
 ```
 
-**Remove the task:**
+This mode:
+- Requires Administrator privileges
+- Actually blocks and removes extension policies
+- Modifies registry keys as needed
+
+## Testing
+
+### Test Dry-Run Mode
 ```powershell
-Unregister-ScheduledTask -TaskName "RegistryExtensionMonitor" -Confirm:$false
+# See what the application would do
+.\WindowsBrowserGuard.exe --dry-run
+
+# Output will show:
+# [DRY-RUN] Would delete registry key: ...
+# [DRY-RUN] Would add to blocklist: ...
 ```
 
-### Option 2: Registry Run Key (Simpler but requires UAC prompt)
+### Test Detection Logic
+All detection logic is in `pkg/detection/` and can be imported for testing without admin privileges.
 
-Add to registry startup (will prompt for elevation at each login):
+## Development
 
-```powershell
-$exePath = "C:\Path\To\printwatch.exe"
-$regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-$valueName = "RegistryExtensionMonitor"
+### Adding New Detection Rules
+1. Add detection logic to `pkg/detection/detection.go`
+2. Add tests to `test_detection.go`
+3. Test without Admin: `go run test_detection.go`
+4. Integrate into main application
 
-Set-ItemProperty -Path $regPath -Name $valueName -Value $exePath
-Write-Host "✓ Added to startup registry"
+### Adding New Registry Operations
+1. Add function to `pkg/registry/registry.go`
+2. Export function (capitalize first letter)
+3. Use in `cmd/WindowsBrowserGuard/main.go`
+
+### Module Import Path
+All packages use the module path: `github.com/kad/WindowsBrowserGuard`
+
+Example imports:
+```go
+import (
+    "github.com/kad/WindowsBrowserGuard/pkg/buffers"
+    "github.com/kad/WindowsBrowserGuard/pkg/detection"
+    "github.com/kad/WindowsBrowserGuard/pkg/pathutils"
+    "github.com/kad/WindowsBrowserGuard/pkg/registry"
+)
 ```
 
-**Remove from startup:**
-```powershell
-Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "RegistryExtensionMonitor"
-```
+## Performance Optimizations
 
-### Option 3: Startup Folder (Least Recommended)
+### Buffer Pooling (pkg/buffers)
+- Reuses memory buffers across registry operations
+- Reduces garbage collection overhead
+- Separate pools for different buffer sizes
 
-Create a shortcut in the Startup folder:
+### Path Operations (pkg/pathutils)
+- Pre-allocated string builders
+- Case-insensitive comparisons optimized
+- Component-based path parsing
 
-```powershell
-$exePath = "C:\Path\To\printwatch.exe"
-$startupFolder = [Environment]::GetFolderPath('Startup')
-$shortcutPath = Join-Path $startupFolder "RegistryExtensionMonitor.lnk"
+### Registry Scanning (pkg/registry)
+- Depth-limited recursive scanning
+- Efficient state diffing
+- Extension path indexing for O(1) lookups
 
-$WScriptShell = New-Object -ComObject WScript.Shell
-$shortcut = $WScriptShell.CreateShortcut($shortcutPath)
-$shortcut.TargetPath = $exePath
-$shortcut.WorkingDirectory = Split-Path $exePath
-$shortcut.Save()
+## Architecture Benefits
 
-Write-Host "✓ Shortcut created in Startup folder: $shortcutPath"
-```
+### Modularity
+- Clear separation of concerns
+- Each package has single responsibility
+- Easy to test individual components
 
-## Running in Background
+### Testability
+- Detection logic testable without privileges
+- Mock-friendly interfaces
+- Comprehensive test coverage
 
-### Start as Background Process
+### Maintainability
+- Standard Go project layout
+- Well-documented packages
+- Explicit dependencies
 
-```powershell
-# Start the program in a hidden window
-Start-Process -FilePath "C:\Path\To\printwatch.exe" -WindowStyle Hidden -Verb RunAs
-```
-
-### Start with Logging to File
-
-```powershell
-$exePath = "C:\Path\To\printwatch.exe"
-$logPath = "C:\Path\To\printwatch-log.txt"
-
-Start-Process -FilePath $exePath -WindowStyle Hidden -RedirectStandardOutput $logPath -Verb RunAs
-```
-
-## Managing the Running Process
-
-### Check if Running
-
-```powershell
-Get-Process -Name "printwatch" -ErrorAction SilentlyContinue
-```
-
-### View Process Details
-
-```powershell
-Get-Process -Name "printwatch" | Format-List *
-```
-
-### Stop the Process
-
-```powershell
-Stop-Process -Name "printwatch" -Force
-```
-
-### Stop by Process ID (if multiple instances)
-
-```powershell
-# Find the process ID
-Get-Process -Name "printwatch"
-
-# Stop specific instance
-Stop-Process -Id <PID> -Force
-```
-
-## Viewing Logs
-
-### For Task Scheduler Setup
-
-If you set up the program with Task Scheduler (Option 1), logs are written to the file specified during setup:
-
-```powershell
-# View log file in real-time (update path to match your log file location)
-Get-Content "C:\Path\To\printwatch-log.txt" -Tail 50 -Wait
-
-# View last 100 lines
-Get-Content "C:\Path\To\printwatch-log.txt" -Tail 100
-
-# Search for specific events
-Get-Content "C:\Path\To\printwatch-log.txt" | Select-String "DETECTED"
-```
-
-### For Manual Runs with Output Redirection
-
-If you started the program with output redirection:
-
-```powershell
-# View log file (update path to match your log file location)
-Get-Content "C:\Path\To\printwatch-log.txt" -Tail 50 -Wait
-```
-
-### For Console/Interactive Runs
-
-If running in a console window, output appears directly in the terminal. No log file is created unless you redirect output.
-
-## How It Works
-
-### Chrome Extension Monitoring
-
-1. Detects when a value is added to a key containing `ExtensionInstallForcelist`
-2. Extracts the extension ID (string before the first `;`)
-3. Adds the extension ID to the corresponding `ExtensionInstallBlocklist` key
-4. Deletes the entire `ExtensionInstallForcelist` key
-
-**Example:**
-- Detects: `HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist\1 = "extensionid;https://update.url"`
-- Adds: `HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallBlocklist\1 = "extensionid"`
-- Deletes: `HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist`
-
-### Firefox Extension Monitoring
-
-1. Detects when `installation_mode` is set to `force_installed` or `normal_installed` under `ExtensionSettings`
-2. Extracts the extension ID from the registry path
-3. Creates a blocklist entry with `installation_mode = "blocked"`
-4. Deletes the original install policy key
-
-**Example:**
-- Detects: `Mozilla\Firefox\ExtensionSettings\{ext-id}\installation_mode = "force_installed"`
-- Creates: `Mozilla\Firefox\ExtensionSettings\{ext-id}\installation_mode = "blocked"`
-- Deletes: The original `{ext-id}` key
-
-## Troubleshooting
-
-### Program doesn't start at login
-- Verify the scheduled task exists: `Get-ScheduledTask -TaskName "RegistryExtensionMonitor"`
-- Check task history in Task Scheduler (taskschd.msc)
-- Ensure the executable path is correct
-
-### "Insufficient privileges" errors
-- The program must run as Administrator
-- If using Task Scheduler, ensure "Run with highest privileges" is checked
-- Manually run: Right-click executable → "Run as administrator"
-
-### Registry keys not being deleted
-- Verify Administrator privileges: The program will show status on startup
-- Check Windows Event Viewer for access denied errors
-- Ensure no other process has the registry key open
-
-### Program crashes or stops
-- Check the log file if output was redirected
-- Run manually in a console to see error messages:
-  ```powershell
-  Start-Process -FilePath ".\printwatch.exe" -Verb RunAs -Wait
-  ```
-
-### Can't find the process
-```powershell
-# Search for all Go processes
-Get-Process | Where-Object {$_.Name -like "*print*"}
-
-# Check if running as different user
-Get-Process -IncludeUserName | Where-Object {$_.ProcessName -eq "printwatch"}
-```
-
-## Building from Source
-
-```powershell
-go build printwatch.go
-```
-
-## Security Notes
-
-- This program requires Administrator privileges to delete registry keys
-- It monitors the entire `HKLM\SOFTWARE\Policies` tree recursively
-- Registry changes are permanent - the program will immediately delete detected extension install policies
-- Blocklist entries persist even after the program stops
-
-## Uninstall
-
-1. Stop the running process:
-   ```powershell
-   Stop-Process -Name "printwatch" -Force
-   ```
-
-2. Remove from startup (if using Task Scheduler):
-   ```powershell
-   Unregister-ScheduledTask -TaskName "RegistryExtensionMonitor" -Confirm:$false
-   ```
-
-3. Delete the executable and log files
-
-## License
-
-This tool is provided as-is for registry monitoring and protection purposes.
+### Reusability
+- Detection logic can be imported by other tools
+- Registry operations are standalone
+- Utilities are general-purpose

@@ -1,4 +1,4 @@
-module kad.name/reg
+module github.com/kad/WindowsBrowserGuard
 
 go 1.23.4
 

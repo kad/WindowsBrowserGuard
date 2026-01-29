@@ -1,4 +1,4 @@
-package main
+package buffers
 
 import (
 	"sync"
@@ -9,7 +9,7 @@ import (
 // ============================================================================
 
 var (
-	// Pool for UTF-16 name buffers (typically 256 uint16)
+	// Pool for UTF-16 name buffers for subkey names (256 uint16)
 	nameBufferPool = sync.Pool{
 		New: func() interface{} {
 			buf := make([]uint16, 256)
@@ -17,30 +17,38 @@ var (
 		},
 	}
 	
-	// Pool for data buffers (start with 4KB, can grow)
-	dataBufferPool = sync.Pool{
+	// Pool for UTF-16 name buffers for value names (16384 uint16)
+	largeNameBufferPool = sync.Pool{
 		New: func() interface{} {
-			buf := make([]byte, 4096)
+			buf := make([]uint16, 16384)
 			return &buf
 		},
 	}
 	
-	// Pool for large data buffers (16KB for large values)
-	largeDataBufferPool = sync.Pool{
+	// Pool for data buffers (16KB for values)
+	dataBufferPool = sync.Pool{
 		New: func() interface{} {
 			buf := make([]byte, 16384)
+			return &buf
+		},
+	}
+	
+	// Pool for large data buffers (64KB for large values)
+	largeDataBufferPool = sync.Pool{
+		New: func() interface{} {
+			buf := make([]byte, 65536)
 			return &buf
 		},
 	}
 )
 
 // getNameBuffer gets a name buffer from the pool
-func getNameBuffer() *[]uint16 {
+func GetNameBuffer() *[]uint16 {
 	return nameBufferPool.Get().(*[]uint16)
 }
 
 // putNameBuffer returns a name buffer to the pool
-func putNameBuffer(buf *[]uint16) {
+func PutNameBuffer(buf *[]uint16) {
 	// Clear sensitive data before returning to pool
 	for i := range *buf {
 		(*buf)[i] = 0
@@ -49,12 +57,12 @@ func putNameBuffer(buf *[]uint16) {
 }
 
 // getDataBuffer gets a data buffer from the pool
-func getDataBuffer() *[]byte {
+func GetDataBuffer() *[]byte {
 	return dataBufferPool.Get().(*[]byte)
 }
 
 // putDataBuffer returns a data buffer to the pool
-func putDataBuffer(buf *[]byte) {
+func PutDataBuffer(buf *[]byte) {
 	// Clear sensitive data before returning to pool
 	for i := range *buf {
 		(*buf)[i] = 0
@@ -62,13 +70,27 @@ func putDataBuffer(buf *[]byte) {
 	dataBufferPool.Put(buf)
 }
 
+// getLargeNameBuffer gets a large name buffer from the pool (for RegEnumValue - value names)
+func GetLargeNameBuffer() *[]uint16 {
+	return largeNameBufferPool.Get().(*[]uint16)
+}
+
+// putLargeNameBuffer returns a large name buffer to the pool
+func PutLargeNameBuffer(buf *[]uint16) {
+	// Clear sensitive data before returning to pool
+	for i := range *buf {
+		(*buf)[i] = 0
+	}
+	largeNameBufferPool.Put(buf)
+}
+
 // getLargeDataBuffer gets a large data buffer from the pool
-func getLargeDataBuffer() *[]byte {
+func GetLargeDataBuffer() *[]byte {
 	return largeDataBufferPool.Get().(*[]byte)
 }
 
 // putLargeDataBuffer returns a large data buffer to the pool
-func putLargeDataBuffer(buf *[]byte) {
+func PutLargeDataBuffer(buf *[]byte) {
 	// Clear sensitive data before returning to pool
 	for i := range *buf {
 		(*buf)[i] = 0
@@ -272,3 +294,5 @@ func (pt *PrefixTree) HasPrefix(prefix string) bool {
 	
 	return true
 }
+
+

@@ -1,4 +1,4 @@
-package main
+package pathutils
 
 import (
 	"strings"
@@ -8,17 +8,17 @@ import (
 // PATH UTILITIES - Optimized string operations
 // ============================================================================
 
-// splitPath splits a Windows registry path by backslash
-func splitPath(path string) []string {
+// SplitPath splits a Windows registry path by backslash
+func SplitPath(path string) []string {
 	if path == "" {
 		return []string{}
 	}
 	return strings.Split(path, "\\")
 }
 
-// getParentPath returns the parent path of a registry key
+// GetParentPath returns the parent path of a registry key
 // Example: "Google\Chrome\Extensions" -> "Google\Chrome"
-func getParentPath(path string) (string, bool) {
+func GetParentPath(path string) (string, bool) {
 	lastSlash := strings.LastIndex(path, "\\")
 	if lastSlash == -1 {
 		return "", false
@@ -26,9 +26,9 @@ func getParentPath(path string) (string, bool) {
 	return path[:lastSlash], true
 }
 
-// getKeyName returns the final component of a path
+// GetKeyName returns the final component of a path
 // Example: "Google\Chrome\Extensions" -> "Extensions"
-func getKeyName(path string) string {
+func GetKeyName(path string) string {
 	lastSlash := strings.LastIndex(path, "\\")
 	if lastSlash == -1 {
 		return path
@@ -36,15 +36,20 @@ func getKeyName(path string) string {
 	return path[lastSlash+1:]
 }
 
-// containsIgnoreCase performs case-insensitive substring check
-func containsIgnoreCase(s, substr string) bool {
+// ContainsIgnoreCase performs case-insensitive substring check
+func ContainsIgnoreCase(s, substr string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
-// hasPathComponent checks if path contains a specific component
+// Contains is a case-insensitive contains check (wrapper for ContainsIgnoreCase)
+func Contains(s, substr string) bool {
+	return ContainsIgnoreCase(s, substr)
+}
+
+// HasPathComponent checks if path contains a specific component
 // More efficient than case-insensitive contains for path matching
-func hasPathComponent(path, component string) bool {
-	parts := splitPath(path)
+func HasPathComponent(path, component string) bool {
+	parts := SplitPath(path)
 	componentLower := strings.ToLower(component)
 	for _, part := range parts {
 		if strings.ToLower(part) == componentLower {
@@ -54,10 +59,10 @@ func hasPathComponent(path, component string) bool {
 	return false
 }
 
-// extractExtensionIDFromPath extracts extension ID from various path formats
+// ExtractExtensionIDFromPath extracts extension ID from various path formats
 // Handles: ...\\extensions\\{id}, ...\\ExtensionSettings\\{id}, etc.
-func extractExtensionIDFromPath(path, afterComponent string) string {
-	parts := splitPath(path)
+func ExtractExtensionIDFromPath(path, afterComponent string) string {
+	parts := SplitPath(path)
 	for i := 0; i < len(parts)-1; i++ {
 		if strings.EqualFold(parts[i], afterComponent) {
 			return parts[i+1]
@@ -66,18 +71,30 @@ func extractExtensionIDFromPath(path, afterComponent string) string {
 	return ""
 }
 
-// buildPath efficiently constructs a registry path from components
-func buildPath(components ...string) string {
+// BuildPath efficiently constructs a registry path from components
+func BuildPath(components ...string) string {
+	// Filter out empty components
+	nonEmpty := make([]string, 0, len(components))
+	for _, c := range components {
+		if c != "" {
+			nonEmpty = append(nonEmpty, c)
+		}
+	}
+	
+	if len(nonEmpty) == 0 {
+		return ""
+	}
+	
 	var builder strings.Builder
 	totalLen := 0
-	for _, c := range components {
+	for _, c := range nonEmpty {
 		totalLen += len(c)
 	}
-	totalLen += len(components) - 1 // for separators
+	totalLen += len(nonEmpty) - 1 // for separators
 	builder.Grow(totalLen)
 	
-	for i, component := range components {
-		if i > 0 && component != "" {
+	for i, component := range nonEmpty {
+		if i > 0 {
 			builder.WriteString("\\")
 		}
 		builder.WriteString(component)
@@ -85,9 +102,9 @@ func buildPath(components ...string) string {
 	return builder.String()
 }
 
-// replacePathComponent replaces a path component with another
-// Example: replacePathComponent(path, "ExtensionInstallForcelist", "ExtensionInstallBlocklist")
-func replacePathComponent(path, old, new string) string {
+// ReplacePathComponent replaces a path component with another
+// Example: ReplacePathComponent(path, "ExtensionInstallForcelist", "ExtensionInstallBlocklist")
+func ReplacePathComponent(path, old, new string) string {
 	// For case-insensitive replacement in registry paths
 	oldLower := strings.ToLower(old)
 	result := strings.Builder{}
@@ -108,3 +125,4 @@ func replacePathComponent(path, old, new string) string {
 	
 	return result.String()
 }
+
