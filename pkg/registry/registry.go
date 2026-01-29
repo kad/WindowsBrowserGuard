@@ -125,11 +125,6 @@ func CaptureKeyRecursive(hKey windows.Handle, relativePath string, state *RegSta
 		return nil
 	}
 
-	if strings.Contains(strings.ToLower(relativePath), "chrome") ||
-		strings.Contains(strings.ToLower(relativePath), "edge") {
-		fmt.Printf("[DEBUG depth=%d] Scanning: %s\n", depth, relativePath)
-	}
-
 	var index uint32
 	subkeyNames := []string{}
 	for {
@@ -152,15 +147,10 @@ func CaptureKeyRecursive(hKey windows.Handle, relativePath string, state *RegSta
 		state.Subkeys[fullPath] = true
 		subkeyNames = append(subkeyNames, subkeyName)
 
-		if strings.Contains(strings.ToLower(subkeyName), "forcelist") {
-			fmt.Printf("[DEBUG depth=%d] Found forcelist subkey: %s (fullPath=%s)\n", depth, subkeyName, fullPath)
-		}
-
 		index++
 	}
 
 	index = 0
-	valueCount := 0
 	for {
 		nameBuf := buffers.GetLargeNameBuffer()
 		nameLen := uint32(len(*nameBuf))
@@ -203,16 +193,7 @@ func CaptureKeyRecursive(hKey windows.Handle, relativePath string, state *RegSta
 			Data: valueData,
 		}
 
-		if strings.Contains(strings.ToLower(relativePath), "forcelist") {
-			fmt.Printf("[DEBUG depth=%d] Captured value: %s = %s\n", depth, fullPath, valueData)
-			valueCount++
-		}
-
 		index++
-	}
-
-	if strings.Contains(strings.ToLower(relativePath), "forcelist") && valueCount == 0 {
-		fmt.Printf("[DEBUG depth=%d] No values found in forcelist key: %s\n", depth, relativePath)
 	}
 
 	for _, subkeyName := range subkeyNames {
@@ -224,18 +205,10 @@ func CaptureKeyRecursive(hKey windows.Handle, relativePath string, state *RegSta
 		var hSubKey windows.Handle
 		err = windows.RegOpenKeyEx(hKey, subkeyPtr, 0, windows.KEY_READ, &hSubKey)
 		if err != nil {
-			fullPath := pathutils.BuildPath(relativePath, subkeyName)
-			if strings.Contains(strings.ToLower(fullPath), "forcelist") {
-				fmt.Printf("[DEBUG] Failed to open: %s (error: %v)\n", fullPath, err)
-			}
 			continue
 		}
 
 		fullPath := pathutils.BuildPath(relativePath, subkeyName)
-
-		if strings.Contains(strings.ToLower(fullPath), "forcelist") {
-			fmt.Printf("[DEBUG depth=%d] Opening and recursing into: %s\n", depth, fullPath)
-		}
 
 		err = CaptureKeyRecursive(hSubKey, fullPath, state, depth+1)
 		windows.RegCloseKey(hSubKey)

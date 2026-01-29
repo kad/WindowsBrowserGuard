@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -654,52 +653,6 @@ func main() {
 
 	fmt.Printf("Initial state: %d subkeys, %d values (captured in %v)\n",
 		len(previousState.Subkeys), len(previousState.Values), scanDuration)
-
-	fmt.Println("\n[DEBUG] Checking for ExtensionInstallForcelist subkeys:")
-	foundForcelist := false
-	for subkey := range previousState.Subkeys {
-		if strings.Contains(strings.ToLower(subkey), "forcelist") {
-			fmt.Printf("  ✓ Found subkey: %s\n", subkey)
-			foundForcelist = true
-		}
-	}
-	if !foundForcelist {
-		fmt.Println("  ⚠️  No forcelist subkeys found!")
-	}
-
-	fmt.Println("\n[DEBUG] Checking for ExtensionInstallForcelist values:")
-	foundForcelistValues := false
-	for valuePath, value := range previousState.Values {
-		if strings.Contains(strings.ToLower(valuePath), "forcelist") {
-			fmt.Printf("  ✓ Found value: %s = %s\n", valuePath, value.Data)
-			foundForcelistValues = true
-		}
-	}
-	if !foundForcelistValues {
-		fmt.Println("  ⚠️  No forcelist values found!")
-	}
-
-	fmt.Println("\n[DEBUG] Sample of all subkeys (first 20):")
-	count := 0
-	for subkey := range previousState.Subkeys {
-		fmt.Printf("  - %s\n", subkey)
-		count++
-		if count >= 20 {
-			fmt.Println("  ... (showing first 20 of", len(previousState.Subkeys), ")")
-			break
-		}
-	}
-
-	fmt.Println("\n[DEBUG] Sample of all values (first 20):")
-	count = 0
-	for valuePath, value := range previousState.Values {
-		fmt.Printf("  - %s = %s (type: %d)\n", valuePath, value.Data, value.Type)
-		count++
-		if count >= 20 {
-			fmt.Println("  ... (showing first 20 of", len(previousState.Values), ")")
-			break
-		}
-	}
 
 	fmt.Println("Building extension path index...")
 	indexStart := time.Now()
