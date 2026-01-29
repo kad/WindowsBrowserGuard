@@ -297,14 +297,19 @@ func printDiff(oldState, newState *registry.RegState, keyPath string, canWrite b
 }
 
 func processExistingPolicies(keyPath string, state *registry.RegState, canWrite bool) {
-	if !isAdmin() {
+	if !canWrite && !isAdmin() {
+		fmt.Println("\n========================================")
+		fmt.Println("Checking for existing extension policies...")
+		fmt.Println("(DRY-RUN MODE - showing planned operations)")
+		fmt.Println("========================================")
+	} else if !isAdmin() && canWrite {
 		fmt.Println("\n⚠️  Not running as Administrator - skipping existing policy processing")
 		return
+	} else {
+		fmt.Println("\n========================================")
+		fmt.Println("Checking for existing extension policies...")
+		fmt.Println("========================================")
 	}
-
-	fmt.Println("\n========================================")
-	fmt.Println("Checking for existing extension policies...")
-	fmt.Println("========================================")
 
 	hasExistingPolicies := false
 
@@ -623,7 +628,13 @@ func main() {
 	}
 
 	var hKey windows.Handle
-	err = windows.RegOpenKeyEx(windows.HKEY_LOCAL_MACHINE, key, 0, windows.KEY_NOTIFY|windows.KEY_READ|windows.DELETE, &hKey)
+	// In dry-run mode, only request read permissions
+	var permissions uint32 = windows.KEY_NOTIFY | windows.KEY_READ
+	if canWrite {
+		permissions |= windows.DELETE
+	}
+	
+	err = windows.RegOpenKeyEx(windows.HKEY_LOCAL_MACHINE, key, 0, permissions, &hKey)
 	if err != nil {
 		fmt.Println("Error opening registry key:", err)
 		return
