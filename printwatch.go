@@ -1058,6 +1058,66 @@ func processExistingPolicies(keyPath string, state *RegState) {
 	fmt.Println("========================================\n")
 }
 
+func cleanupAllowlists(keyPath string, state *RegState) {
+	if !isAdmin() {
+		return
+	}
+
+	fmt.Println("Checking for ExtensionInstallAllowlist keys...")
+	
+	allowlistsFound := false
+	allowlistKeys := make(map[string]bool)
+	
+	// Find all allowlist keys
+	for subkeyPath := range state.Subkeys {
+		if contains(subkeyPath, "ExtensionInstallAllowlist") {
+			allowlistsFound = true
+			allowlistKeys[subkeyPath] = true
+		}
+	}
+	
+	if !allowlistsFound {
+		fmt.Println("✓ No ExtensionInstallAllowlist keys found")
+		return
+	}
+	
+	// Delete each allowlist key
+	for allowlistPath := range allowlistKeys {
+		fmt.Printf("\n[REMOVING ALLOWLIST]\n")
+		fmt.Printf("Path: %s\n", allowlistPath)
+		
+		fullPath := keyPath + "\\" + allowlistPath
+		values, err := readKeyValues("", fullPath)
+		if err == nil && len(values) > 0 {
+			fmt.Printf("Found %d extension(s) in allowlist:\n", len(values))
+			for valueName, valueData := range values {
+				extensionID := extractExtensionIDFromValue(valueData)
+				if extensionID != "" {
+					fmt.Printf("  - %s: %s\n", valueName, extensionID)
+				}
+			}
+		}
+		
+		fmt.Printf("🗑️  Deleting allowlist key: %s\n", allowlistPath)
+		err = deleteRegistryKeyRecursive(keyPath, allowlistPath)
+		if err != nil {
+			fmt.Printf("❌ Failed to delete allowlist: %v\n", err)
+		} else {
+			fmt.Printf("✓ Successfully deleted allowlist\n")
+			// Remove from state
+			delete(state.Subkeys, allowlistPath)
+			for valName := range state.Values {
+				if len(valName) > len(allowlistPath) && 
+				   valName[:len(allowlistPath)] == allowlistPath {
+					delete(state.Values, valName)
+				}
+			}
+		}
+	}
+	
+	fmt.Println()
+}
+
 func main() {
 	// Check if running as administrator
 	if !isAdmin() {
@@ -1117,6 +1177,9 @@ func main() {
 
 	// Process any existing extension policies at startup
 	processExistingPolicies(keyPath, previousState)
+	
+	// Clean up any allowlists
+	cleanupAllowlists(keyPath, previousState)
 
 	// Create an event for notifications
 	event, err := windows.CreateEvent(nil, 0, 0, nil)
