@@ -69,13 +69,16 @@ if ($choice -eq "1") {
 } elseif ($choice -eq "2") {
     # Run hidden with log file
     Write-Host "Starting as hidden background process..." -ForegroundColor Cyan
-    Start-Process -FilePath $exePath -WindowStyle Hidden -RedirectStandardOutput $logPath -RedirectStandardError $logPath -Verb RunAs
+    
+    # Create a simple wrapper to redirect output
+    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"& '$exePath' *>&1 | Tee-Object -FilePath '$logPath'`"" -WindowStyle Hidden
+    
     Start-Sleep -Seconds 2
     
     # Verify it started
-    $process = Get-Process -Name "WindowsBrowserGuard" -ErrorAction SilentlyContinue
-    if ($process) {
-        Write-Host "✓ Monitor started successfully (PID: $($process.Id))" -ForegroundColor Green
+    $runningProcess = Get-Process -Name "WindowsBrowserGuard" -ErrorAction SilentlyContinue
+    if ($runningProcess) {
+        Write-Host "✓ Monitor started successfully (PID: $($runningProcess.Id))" -ForegroundColor Green
         Write-Host ""
         Write-Host "To view logs in real-time:" -ForegroundColor Yellow
         Write-Host "  Get-Content '$logPath' -Tail 50 -Wait" -ForegroundColor Cyan
