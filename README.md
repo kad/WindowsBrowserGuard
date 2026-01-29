@@ -279,3 +279,26 @@ import (
 - Detection logic can be imported by other tools
 - Registry operations are standalone
 - Utilities are general-purpose
+
+## OpenTelemetry Logging
+
+In addition to tracing, WindowsBrowserGuard exports structured logs to OTLP backends:
+
+```powershell
+# Logs automatically exported when using OTLP endpoint
+.\WindowsBrowserGuard.exe --otlp-endpoint localhost:4317 --otlp-insecure
+```
+
+**Log Features:**
+- ✅ Structured logging with contextual attributes
+- ✅ Multiple log levels (Debug, Info, Warn, Error)
+- ✅ Automatic trace-log correlation (includes trace and span IDs)
+- ✅ Exported to same OTLP endpoint as traces
+- ✅ Viewable in Jaeger, Grafana, cloud platforms
+
+**Example Logs:**
+- "Registry deletion permissions verified" (Info)
+- "Insufficient permissions to delete registry keys" (Warn)
+- "Failed to open registry key" (Error)
+
+See **OPENTELEMETRY-LOGGING.md** for detailed documentation on logging setup, log-trace correlation, and backend integration.

@@ -6,12 +6,18 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/log/global"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
@@ -21,6 +27,8 @@ import (
 var (
 	tracer trace.Tracer
 	tp     *sdktrace.TracerProvider
+	logger log.Logger
+	lp     *sdklog.LoggerProvider
 )
 
 // Config holds the configuration for telemetry
@@ -98,17 +106,101 @@ func InitTracing(cfg Config) (func(context.Context) error, error) {
 	// Get tracer
 	tracer = tp.Tracer("windowsbrowserguard")
 
+	// Initialize logging if OTLP endpoint is configured
+	if cfg.OTLPEndpoint != "" {
+		logExporter, err := createOTLPLogExporter(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create log exporter: %w", err)
+		}
+
+		// Create logger provider
+		lp = sdklog.NewLoggerProvider(
+			sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
+			sdklog.WithResource(res),
+		)
+
+		// Set global logger provider
+		global.SetLoggerProvider(lp)
+
+		// Get logger
+		logger = lp.Logger("windowsbrowserguard")
+	}
+
 	// Return shutdown function
 	shutdown := func(ctx context.Context) error {
-		err := tp.Shutdown(ctx)
+		var traceErr, logErr error
+		
+		if tp != nil {
+			traceErr = tp.Shutdown(ctx)
+		}
+		
+		if lp != nil {
+			logErr = lp.Shutdown(ctx)
+		}
+		
 		closeErr := closeFunc()
-		if err != nil {
-			return err
+		
+		if traceErr != nil {
+			return traceErr
+		}
+		if logErr != nil {
+			return logErr
 		}
 		return closeErr
 	}
 
 	return shutdown, nil
+}
+
+// createOTLPLogExporter creates an OTLP log exporter based on the protocol
+func createOTLPLogExporter(cfg Config) (sdklog.Exporter, error) {
+	protocol := strings.ToLower(cfg.OTLPProtocol)
+	if protocol == "" {
+		protocol = "grpc"
+	}
+
+	switch protocol {
+	case "grpc":
+		return createOTLPLogGRPCExporter(cfg)
+	case "http":
+		return createOTLPLogHTTPExporter(cfg)
+	default:
+		return nil, fmt.Errorf("unsupported OTLP protocol: %s", protocol)
+	}
+}
+
+// createOTLPLogGRPCExporter creates a gRPC OTLP log exporter
+func createOTLPLogGRPCExporter(cfg Config) (sdklog.Exporter, error) {
+	opts := []otlploggrpc.Option{
+		otlploggrpc.WithEndpoint(cfg.OTLPEndpoint),
+	}
+
+	if cfg.OTLPInsecure {
+		opts = append(opts, otlploggrpc.WithInsecure())
+	}
+
+	if len(cfg.OTLPHeaders) > 0 {
+		opts = append(opts, otlploggrpc.WithHeaders(cfg.OTLPHeaders))
+	}
+
+	return otlploggrpc.New(context.Background(), opts...)
+}
+
+// createOTLPLogHTTPExporter creates an HTTP OTLP log exporter
+func createOTLPLogHTTPExporter(cfg Config) (sdklog.Exporter, error) {
+	opts := []otlploghttp.Option{
+		otlploghttp.WithEndpoint(cfg.OTLPEndpoint),
+	}
+
+	if cfg.OTLPInsecure {
+		opts = append(opts, otlploghttp.WithInsecure())
+	}
+
+	if len(cfg.OTLPHeaders) > 0 {
+		opts = append(opts, otlploghttp.WithHeaders(cfg.OTLPHeaders))
+	}
+
+	return otlploghttp.New(context.Background(), opts...)
 }
 
 // createOTLPExporter creates an OTLP exporter based on the protocol
@@ -205,4 +297,53 @@ func RecordError(ctx context.Context, err error) {
 	if span != nil {
 		span.RecordError(err)
 	}
+}
+
+
+// Logging functions
+
+// LogDebug emits a debug-level log message
+func LogDebug(ctx context.Context, msg string, attrs ...attribute.KeyValue) {
+emitLog(ctx, log.SeverityDebug, msg, attrs...)
+}
+
+// LogInfo emits an info-level log message
+func LogInfo(ctx context.Context, msg string, attrs ...attribute.KeyValue) {
+emitLog(ctx, log.SeverityInfo, msg, attrs...)
+}
+
+// LogWarn emits a warning-level log message
+func LogWarn(ctx context.Context, msg string, attrs ...attribute.KeyValue) {
+emitLog(ctx, log.SeverityWarn, msg, attrs...)
+}
+
+// LogError emits an error-level log message
+func LogError(ctx context.Context, msg string, err error, attrs ...attribute.KeyValue) {
+allAttrs := attrs
+if err != nil {
+allAttrs = append(allAttrs, attribute.String("error", err.Error()))
+}
+emitLog(ctx, log.SeverityError, msg, allAttrs...)
+}
+
+// emitLog is the internal function that emits logs
+func emitLog(ctx context.Context, severity log.Severity, msg string, attrs ...attribute.KeyValue) {
+if logger == nil {
+return // Logging not initialized
+}
+
+// Convert attributes to log.KeyValue
+logAttrs := make([]log.KeyValue, len(attrs))
+for i, attr := range attrs {
+logAttrs[i] = log.String(string(attr.Key), attr.Value.AsString())
+}
+
+// Create the log record
+record := log.Record{}
+record.SetTimestamp(time.Now())
+record.SetSeverity(severity)
+record.SetBody(log.StringValue(msg))
+record.AddAttributes(logAttrs...)
+
+logger.Emit(ctx, record)
 }
