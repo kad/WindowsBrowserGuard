@@ -20,6 +20,8 @@ Test the application safely without making any changes:
 
 ### OpenTelemetry Tracing 📊
 Monitor performance and debug issues with distributed tracing:
+
+**Local file or stdout output:**
 ```powershell
 # Trace to stdout
 .\WindowsBrowserGuard.exe --dry-run --trace-file stdout
@@ -28,12 +30,26 @@ Monitor performance and debug issues with distributed tracing:
 .\WindowsBrowserGuard.exe --dry-run --trace-file traces.json
 ```
 
+**OTLP endpoint (Jaeger, Tempo, cloud providers):**
+```powershell
+# OTLP gRPC (default)
+.\WindowsBrowserGuard.exe --dry-run --otlp-endpoint localhost:4317 --otlp-insecure
+
+# OTLP HTTP
+.\WindowsBrowserGuard.exe --dry-run --otlp-endpoint localhost:4318 --otlp-protocol http --otlp-insecure
+
+# With custom headers (authentication)
+.\WindowsBrowserGuard.exe --otlp-endpoint collector.example.com:4317 --otlp-headers "x-api-key=secret"
+```
+
 **Tracing provides:**
 - ✅ Detailed visibility into application behavior
 - ✅ Performance monitoring for each operation
 - ✅ Complete execution flow traces
 - ✅ Error tracking and debugging
 - ✅ OpenTelemetry standard format (JSON)
+- ✅ Integration with Jaeger, Grafana Tempo, Honeycomb, New Relic, Datadog
+- ✅ Both gRPC and HTTP protocols supported
 
 ### Production Mode
 Run with full blocking capabilities:

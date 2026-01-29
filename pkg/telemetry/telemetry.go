@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -20,40 +23,60 @@ var (
 	tp     *sdktrace.TracerProvider
 )
 
-// InitTracing initializes OpenTelemetry tracing with the specified output
-// If traceOutput is empty, tracing is disabled
-// If traceOutput is "stdout", traces go to stdout
-// Otherwise, traceOutput is treated as a file path
-func InitTracing(traceOutput string) (func(context.Context) error, error) {
-	if traceOutput == "" {
-		// Tracing disabled
+// Config holds the configuration for telemetry
+type Config struct {
+	// TraceOutput can be: empty (disabled), "stdout", file path, or OTLP endpoint
+	TraceOutput string
+	
+	// OTLP configuration
+	OTLPEndpoint  string            // OTLP endpoint URL (e.g., "localhost:4317")
+	OTLPProtocol  string            // "grpc" or "http"
+	OTLPInsecure  bool              // Disable TLS
+	OTLPHeaders   map[string]string // Custom headers
+}
+
+// InitTracing initializes OpenTelemetry tracing with the specified configuration
+func InitTracing(cfg Config) (func(context.Context) error, error) {
+	// If no trace output and no OTLP endpoint, tracing is disabled
+	if cfg.TraceOutput == "" && cfg.OTLPEndpoint == "" {
 		tracer = otel.Tracer("windowsbrowserguard")
 		return func(ctx context.Context) error { return nil }, nil
 	}
 
-	var w io.Writer
-	var closeFunc func() error
+	var exporter sdktrace.SpanExporter
+	var err error
+	var closeFunc func() error = func() error { return nil }
 
-	if traceOutput == "stdout" {
-		w = os.Stdout
-		closeFunc = func() error { return nil }
-	} else {
-		// Open file for writing
-		file, err := os.Create(traceOutput)
+	// Determine which exporter to use
+	if cfg.OTLPEndpoint != "" {
+		// Use OTLP exporter
+		exporter, err = createOTLPExporter(cfg)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create trace file: %w", err)
+			return nil, fmt.Errorf("failed to create OTLP exporter: %w", err)
 		}
-		w = file
-		closeFunc = file.Close
-	}
+	} else {
+		// Use stdout/file exporter
+		var w io.Writer
+		
+		if cfg.TraceOutput == "stdout" {
+			w = os.Stdout
+		} else {
+			// Open file for writing
+			file, err := os.Create(cfg.TraceOutput)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create trace file: %w", err)
+			}
+			w = file
+			closeFunc = file.Close
+		}
 
-	// Create stdout exporter
-	exporter, err := stdouttrace.New(
-		stdouttrace.WithWriter(w),
-		stdouttrace.WithPrettyPrint(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create trace exporter: %w", err)
+		exporter, err = stdouttrace.New(
+			stdouttrace.WithWriter(w),
+			stdouttrace.WithPrettyPrint(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create stdout exporter: %w", err)
+		}
 	}
 
 	// Create resource with service information
@@ -86,6 +109,57 @@ func InitTracing(traceOutput string) (func(context.Context) error, error) {
 	}
 
 	return shutdown, nil
+}
+
+// createOTLPExporter creates an OTLP exporter based on the protocol
+func createOTLPExporter(cfg Config) (sdktrace.SpanExporter, error) {
+	protocol := strings.ToLower(cfg.OTLPProtocol)
+	if protocol == "" {
+		protocol = "grpc" // Default to gRPC
+	}
+
+	switch protocol {
+	case "grpc":
+		return createOTLPGRPCExporter(cfg)
+	case "http":
+		return createOTLPHTTPExporter(cfg)
+	default:
+		return nil, fmt.Errorf("unsupported OTLP protocol: %s (use 'grpc' or 'http')", protocol)
+	}
+}
+
+// createOTLPGRPCExporter creates a gRPC OTLP exporter
+func createOTLPGRPCExporter(cfg Config) (sdktrace.SpanExporter, error) {
+	opts := []otlptracegrpc.Option{
+		otlptracegrpc.WithEndpoint(cfg.OTLPEndpoint),
+	}
+
+	if cfg.OTLPInsecure {
+		opts = append(opts, otlptracegrpc.WithInsecure())
+	}
+
+	if len(cfg.OTLPHeaders) > 0 {
+		opts = append(opts, otlptracegrpc.WithHeaders(cfg.OTLPHeaders))
+	}
+
+	return otlptracegrpc.New(context.Background(), opts...)
+}
+
+// createOTLPHTTPExporter creates an HTTP OTLP exporter
+func createOTLPHTTPExporter(cfg Config) (sdktrace.SpanExporter, error) {
+	opts := []otlptracehttp.Option{
+		otlptracehttp.WithEndpoint(cfg.OTLPEndpoint),
+	}
+
+	if cfg.OTLPInsecure {
+		opts = append(opts, otlptracehttp.WithInsecure())
+	}
+
+	if len(cfg.OTLPHeaders) > 0 {
+		opts = append(opts, otlptracehttp.WithHeaders(cfg.OTLPHeaders))
+	}
+
+	return otlptracehttp.New(context.Background(), opts...)
 }
 
 // StartSpan starts a new span with the given name

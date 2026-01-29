@@ -4,6 +4,7 @@ import (
 "context"
 "flag"
 "fmt"
+"strings"
 "syscall"
 "time"
 
@@ -19,6 +20,12 @@ var (
 // Command line flags
 dryRun    = flag.Bool("dry-run", false, "Run in read-only mode without making changes")
 traceFile = flag.String("trace-file", "", "Output file for OpenTelemetry traces (use 'stdout' for console output)")
+
+// OTLP flags
+otlpEndpoint = flag.String("otlp-endpoint", "", "OTLP endpoint (e.g., localhost:4317 or localhost:4318)")
+otlpProtocol = flag.String("otlp-protocol", "grpc", "OTLP protocol: 'grpc' or 'http' (default: grpc)")
+otlpInsecure = flag.Bool("otlp-insecure", false, "Disable TLS for OTLP connection")
+otlpHeaders  = flag.String("otlp-headers", "", "OTLP headers as comma-separated key=value pairs (e.g., 'key1=val1,key2=val2')")
 )
 
 var extensionIndex *registry.ExtensionPathIndex
@@ -27,13 +34,37 @@ var metrics registry.PerfMetrics
 func main() {
 flag.Parse()
 
+// Parse OTLP headers
+headers := make(map[string]string)
+if *otlpHeaders != "" {
+pairs := strings.Split(*otlpHeaders, ",")
+for _, pair := range pairs {
+kv := strings.SplitN(pair, "=", 2)
+if len(kv) == 2 {
+headers[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+}
+}
+}
+
 // Initialize tracing
 ctx := context.Background()
-shutdown, err := telemetry.InitTracing(*traceFile)
+cfg := telemetry.Config{
+TraceOutput:  *traceFile,
+OTLPEndpoint: *otlpEndpoint,
+OTLPProtocol: *otlpProtocol,
+OTLPInsecure: *otlpInsecure,
+OTLPHeaders:  headers,
+}
+
+shutdown, err := telemetry.InitTracing(cfg)
 if err != nil {
 fmt.Printf("Warning: Failed to initialize tracing: %v\n", err)
-} else if *traceFile != "" {
+} else if *traceFile != "" || *otlpEndpoint != "" {
+if *otlpEndpoint != "" {
+fmt.Printf("📊 Tracing enabled: OTLP %s://%s\n", *otlpProtocol, *otlpEndpoint)
+} else {
 fmt.Printf("📊 Tracing enabled: %s\n", *traceFile)
+}
 defer func() {
 if err := shutdown(ctx); err != nil {
 fmt.Printf("Warning: Failed to shutdown tracing: %v\n", err)
