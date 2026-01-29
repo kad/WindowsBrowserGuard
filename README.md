@@ -31,22 +31,23 @@ Requires Administrator privileges to modify registry keys.
 WindowsBrowserGuard/
 ├── cmd/
 │   └── WindowsBrowserGuard/
-│       └── main.go                 # Main application entry point
+│       └── main.go                 # Main application entry point (74 lines)
 ├── pkg/
+│   ├── admin/
+│   │   └── admin.go                # Windows privilege management
 │   ├── buffers/
-│   │   └── buffers.go             # Memory buffer pools for performance
+│   │   └── buffers.go              # Memory buffer pools for performance
 │   ├── detection/
-│   │   └── detection.go           # Pure detection/parsing logic
+│   │   └── detection.go            # Pure detection/parsing logic
+│   ├── monitor/
+│   │   └── monitor.go              # Registry monitoring and state management
 │   ├── pathutils/
-│   │   └── pathutils.go           # Path manipulation utilities
+│   │   └── pathutils.go            # Path manipulation utilities
 │   └── registry/
-│       └── registry.go            # Windows Registry operations
+│       └── registry.go             # Windows Registry operations
 ├── docs/
-├── test_detection.go              # Detection logic tests (no Admin)
-├── test_registry.go               # Registry access tests
-├── test_scan.go                   # Registry scanning tests
-├── go.mod                         # Go module definition
-└── go.sum                         # Go dependencies
+├── go.mod                          # Go module definition
+└── go.sum                          # Go dependencies
 ```
 
 ## Package Descriptions
