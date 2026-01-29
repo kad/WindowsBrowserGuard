@@ -39,6 +39,16 @@ type RegState struct {
 
 var extensionIndex *ExtensionPathIndex
 
+// Performance metrics
+type perfMetrics struct {
+	startupTime      time.Duration
+	indexBuildTime   time.Duration
+	initialScanKeys  int
+	initialScanDepth int
+}
+
+var metrics perfMetrics
+
 
 func isAdmin() bool {
 	var sid *windows.SID
@@ -119,7 +129,7 @@ func captureRegistryState(hKey windows.Handle, keyPath string) (*RegState, error
 		Values:  make(map[string]RegValue),
 	}
 
-	err := captureKeyRecursive(hKey, "", state)
+	err := captureKeyRecursive(hKey, "", state, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +137,56 @@ func captureRegistryState(hKey windows.Handle, keyPath string) (*RegState, error
 	return state, nil
 }
 
-func captureKeyRecursive(hKey windows.Handle, relativePath string, state *RegState) error {
+// shouldScanPath determines if a registry path is relevant for browser extension monitoring
+func shouldScanPath(path string) bool {
+	if path == "" {
+		return true // Always scan root
+	}
+	
+	pathLower := strings.ToLower(path)
+	
+	// Check if path contains extension-related keys
+	// Chrome/Edge compatible: ExtensionInstallForcelist, ExtensionInstallBlocklist, ExtensionInstallAllowlist
+	if strings.Contains(pathLower, "extensioninstall") {
+		return true
+	}
+	
+	// Firefox: ExtensionSettings
+	if strings.Contains(pathLower, "extensionsettings") {
+		return true
+	}
+	
+	// Extension settings paths: 3rdparty\extensions
+	if strings.Contains(pathLower, "3rdparty") && strings.Contains(pathLower, "extensions") {
+		return true
+	}
+	
+	// Also check if this is a parent path that might lead to these keys
+	// Allow paths that are ancestors of policy keys
+	parts := splitPath(path)
+	
+	// Always scan first 2 levels (vendor\product) - e.g., "Google\Chrome", "Microsoft\Edge"
+	if len(parts) <= 2 {
+		return true
+	}
+	
+	// At deeper levels, we must see extension-related keywords
+	return false
+}
+
+const maxRegistryDepth = 8 // Reasonable depth for browser policies
+
+func captureKeyRecursive(hKey windows.Handle, relativePath string, state *RegState, depth int) error {
+	// Apply depth limit to prevent excessive recursion
+	if depth > maxRegistryDepth {
+		return nil
+	}
+	
+	// Filter: skip branches that don't contain browser/extension keywords
+	// Only apply filtering at depth 2+ to allow vendor names through
+	if depth > 2 && !shouldScanPath(relativePath) {
+		return nil
+	}
 	// Enumerate subkeys at this level
 	var index uint32
 	subkeyNames := []string{}
@@ -215,7 +274,7 @@ func captureKeyRecursive(hKey windows.Handle, relativePath string, state *RegSta
 
 		fullPath := buildPath(relativePath, subkeyName)
 
-		captureKeyRecursive(hSubKey, fullPath, state)
+		captureKeyRecursive(hSubKey, fullPath, state, depth+1)
 		windows.RegCloseKey(hSubKey)
 	}
 
@@ -453,13 +512,7 @@ func printDiff(oldState, newState *RegState, keyPath string) {
 							fmt.Printf("  ✓ Successfully deleted Chrome forcelist key\n")
 							// Remove from newState
 							delete(newState.Subkeys, forcelistKeyPath)
-							// Remove all values under this key from newState
-							for valName := range newState.Values {
-								if len(valName) > len(forcelistKeyPath) && 
-								   valName[:len(forcelistKeyPath)] == forcelistKeyPath {
-									delete(newState.Values, valName)
-								}
-							}
+							removeSubtreeFromState(newState, forcelistKeyPath)
 						}
 					}
 				}
@@ -506,13 +559,7 @@ func printDiff(oldState, newState *RegState, keyPath string) {
 									fmt.Printf("  ✓ Successfully deleted Firefox install policy\n")
 									// Remove from newState
 									delete(newState.Subkeys, extensionKeyPath)
-									// Remove all values under this key from newState
-									for valName := range newState.Values {
-										if len(valName) > len(extensionKeyPath) && 
-										   valName[:len(extensionKeyPath)] == extensionKeyPath {
-											delete(newState.Values, valName)
-										}
-									}
+									removeSubtreeFromState(newState, extensionKeyPath)
 								}
 							}
 						}
@@ -1073,12 +1120,7 @@ func processExistingPolicies(keyPath string, state *RegState) {
 							fmt.Printf("✓ Successfully removed install policy\n")
 							// Remove from state since we deleted it
 							delete(state.Subkeys, extensionKeyPath)
-							for valName := range state.Values {
-								if len(valName) > len(extensionKeyPath) && 
-								   valName[:len(extensionKeyPath)] == extensionKeyPath {
-									delete(state.Values, valName)
-								}
-							}
+							removeSubtreeFromState(state, extensionKeyPath)
 						}
 					}
 				}
@@ -1278,18 +1320,29 @@ func main() {
 
 	// Capture initial state
 	fmt.Println("Capturing initial registry state...")
+	startTime := time.Now()
 	previousState, err := captureRegistryState(hKey, keyPath)
 	if err != nil {
 		fmt.Println("Error capturing initial state:", err)
 		return
 	}
-	fmt.Printf("Initial state: %d subkeys, %d values\n", len(previousState.Subkeys), len(previousState.Values))
+	scanDuration := time.Since(startTime)
+	metrics.startupTime = scanDuration
+	metrics.initialScanKeys = len(previousState.Subkeys) + len(previousState.Values)
+	
+	fmt.Printf("Initial state: %d subkeys, %d values (captured in %v)\n", 
+		len(previousState.Subkeys), len(previousState.Values), scanDuration)
 
 	// Build extension path index for O(1) lookups
 	fmt.Println("Building extension path index...")
+	indexStart := time.Now()
 	extensionIndex = NewExtensionPathIndex()
 	extensionIndex.BuildFromState(previousState)
-	fmt.Printf("Index built: tracking %d unique extension IDs\n", len(extensionIndex.pathsByExtID))
+	indexDuration := time.Since(indexStart)
+	metrics.indexBuildTime = indexDuration
+	
+	fmt.Printf("Index built: tracking %d unique extension IDs (in %v)\n", 
+		len(extensionIndex.pathsByExtID), indexDuration)
 
 	// Process any existing extension policies at startup
 	processExistingPolicies(keyPath, previousState)
