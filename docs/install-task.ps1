@@ -53,7 +53,9 @@ if ($existingTask) {
 Write-Host "Creating wrapper script..." -ForegroundColor Cyan
 $wrapperScript = @"
 # Wrapper script for Windows Browser Guard
-# This script redirects program output to a log file
+# This script starts the monitor and redirects output to a log file
+
+Set-Location -Path '$scriptDir'
 
 `$exePath = '$exePath'
 `$logPath = '$logPath'
@@ -63,8 +65,9 @@ if (-not (Test-Path `$logPath)) {
     New-Item -Path `$logPath -ItemType File -Force | Out-Null
 }
 
-# Start the monitor and redirect output
-Start-Process -FilePath `$exePath -NoNewWindow -RedirectStandardOutput `$logPath -RedirectStandardError `$logPath -Wait
+# Start the monitor process directly without waiting
+# The process will run in the background and keep running
+& `$exePath *>&1 | Out-File -FilePath `$logPath -Append
 "@
 
 Set-Content -Path $wrapperPath -Value $wrapperScript -Force
@@ -74,9 +77,9 @@ Write-Host "✓ Wrapper script created: $wrapperPath" -ForegroundColor Green
 Write-Host "Creating scheduled task..." -ForegroundColor Cyan
 
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$wrapperPath`""
-$trigger = New-ScheduledTaskTrigger -AtLogOn
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0 -StartWhenAvailable
 
 try {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description "Monitors registry for unwanted extension installations and automatically blocks them" -ErrorAction Stop | Out-Null
