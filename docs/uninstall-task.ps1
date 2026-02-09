@@ -14,6 +14,7 @@ if (-not $isAdmin) {
 $taskName = "WindowsBrowserGuard"
 $scriptDir = $PSScriptRoot
 $wrapperPath = Join-Path $scriptDir "WindowsBrowserGuard-wrapper.ps1"
+$configPath = Join-Path $scriptDir "WindowsBrowserGuard-config.json"
 $logPath = Join-Path $scriptDir "WindowsBrowserGuard-log.txt"
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -74,6 +75,20 @@ if (Test-Path $wrapperPath) {
             Write-Host "✓ Wrapper script removed" -ForegroundColor Green
         } catch {
             Write-Host "❌ Failed to remove wrapper script: $_" -ForegroundColor Red
+        }
+    }
+}
+
+# Ask about config file
+if (Test-Path $configPath) {
+    Write-Host ""
+    $removeConfig = Read-Host "Do you want to remove the configuration file? (Y/N)"
+    if ($removeConfig -eq 'Y' -or $removeConfig -eq 'y') {
+        try {
+            Remove-Item -Path $configPath -Force -ErrorAction Stop
+            Write-Host "✓ Configuration file removed" -ForegroundColor Green
+        } catch {
+            Write-Host "❌ Failed to remove configuration file: $_" -ForegroundColor Red
         }
     }
 }

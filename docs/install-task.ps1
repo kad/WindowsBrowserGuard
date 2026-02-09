@@ -15,6 +15,7 @@ $scriptDir = $PSScriptRoot
 $exePath = Join-Path $scriptDir "WindowsBrowserGuard.exe"
 $logPath = Join-Path $scriptDir "WindowsBrowserGuard-log.txt"
 $wrapperPath = Join-Path $scriptDir "WindowsBrowserGuard-wrapper.ps1"
+$configPath = Join-Path $scriptDir "WindowsBrowserGuard-config.json"
 $taskName = "WindowsBrowserGuard"
 
 # Validate executable exists
@@ -31,7 +32,45 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Executable: $exePath" -ForegroundColor Gray
 Write-Host "Log file:   $logPath" -ForegroundColor Gray
+Write-Host "Config:     $configPath" -ForegroundColor Gray
 Write-Host "Task name:  $taskName" -ForegroundColor Gray
+Write-Host ""
+
+# Ask about OTLP configuration
+Write-Host "OpenTelemetry Configuration" -ForegroundColor Cyan
+Write-Host "─────────────────────────────" -ForegroundColor Gray
+$configureOTLP = Read-Host "Do you want to configure OTLP endpoint for telemetry? (Y/N)"
+
+$otlpEndpoint = ""
+$otlpProtocol = "grpc"
+$otlpInsecure = $false
+
+if ($configureOTLP -eq 'Y' -or $configureOTLP -eq 'y') {
+    Write-Host ""
+    Write-Host "OTLP Endpoint Examples:" -ForegroundColor Yellow
+    Write-Host "  • localhost:4317 (gRPC - default)" -ForegroundColor Gray
+    Write-Host "  • localhost:4318 (HTTP)" -ForegroundColor Gray
+    Write-Host "  • otel-collector.company.com:4317" -ForegroundColor Gray
+    Write-Host ""
+    
+    $otlpEndpoint = Read-Host "OTLP Endpoint (host:port)"
+    
+    if ($otlpEndpoint) {
+        $protocolChoice = Read-Host "Protocol: (1) gRPC [default] or (2) HTTP?"
+        if ($protocolChoice -eq '2') {
+            $otlpProtocol = "http"
+        }
+        
+        $insecureChoice = Read-Host "Disable TLS (use for local testing)? (Y/N)"
+        $otlpInsecure = ($insecureChoice -eq 'Y' -or $insecureChoice -eq 'y')
+        
+        Write-Host ""
+        Write-Host "✓ OTLP Configuration:" -ForegroundColor Green
+        Write-Host "  Endpoint: $otlpEndpoint" -ForegroundColor Gray
+        Write-Host "  Protocol: $otlpProtocol" -ForegroundColor Gray
+        Write-Host "  Insecure: $otlpInsecure" -ForegroundColor Gray
+    }
+}
 Write-Host ""
 
 # Check if task already exists
@@ -49,6 +88,29 @@ if ($existingTask) {
     Write-Host "✓ Existing task removed" -ForegroundColor Green
 }
 
+# Save configuration
+Write-Host "Saving configuration..." -ForegroundColor Cyan
+$config = @{
+    OTLPEndpoint = $otlpEndpoint
+    OTLPProtocol = $otlpProtocol
+    OTLPInsecure = $otlpInsecure
+    ExePath = $exePath
+    LogPath = $logPath
+    TaskName = $taskName
+}
+$config | ConvertTo-Json | Set-Content -Path $configPath -Force
+Write-Host "✓ Configuration saved: $configPath" -ForegroundColor Green
+
+# Build command line arguments
+$cmdArgs = ""
+if ($otlpEndpoint) {
+    $cmdArgs += " --otlp-endpoint=`"$otlpEndpoint`""
+    $cmdArgs += " --otlp-protocol=$otlpProtocol"
+    if ($otlpInsecure) {
+        $cmdArgs += " --otlp-insecure"
+    }
+}
+
 # Create wrapper script that redirects output to log file
 Write-Host "Creating wrapper script..." -ForegroundColor Cyan
 $wrapperScript = @"
@@ -59,6 +121,7 @@ Set-Location -Path '$scriptDir'
 
 `$exePath = '$exePath'
 `$logPath = '$logPath'
+`$args = '$cmdArgs'
 
 # Create log file if it doesn't exist
 if (-not (Test-Path `$logPath)) {
@@ -67,7 +130,11 @@ if (-not (Test-Path `$logPath)) {
 
 # Start the monitor process directly without waiting
 # The process will run in the background and keep running
-& `$exePath *>&1 | Out-File -FilePath `$logPath -Append
+if (`$args) {
+    & `$exePath `$args.Split(' ') *>&1 | Out-File -FilePath `$logPath -Append
+} else {
+    & `$exePath *>&1 | Out-File -FilePath `$logPath -Append
+}
 "@
 
 Set-Content -Path $wrapperPath -Value $wrapperScript -Force

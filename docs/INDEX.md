@@ -42,24 +42,40 @@ Historical documents tracking the evolution of the codebase.
 - **[GORELEASER.md](development/GORELEASER.md)** - GoReleaser configuration and release process
 
 ### `/guides` - User Guides & How-Tos
-Step-by-step guides for common tasks (currently empty - guides are in README.md).
+Step-by-step guides for common tasks.
+
+- **[MAINTENANCE-SCRIPTS.md](guides/MAINTENANCE-SCRIPTS.md)** - Complete guide to installation and maintenance scripts
 
 ## 🛠️ PowerShell Scripts
 
 These scripts are located in the `/docs` directory root:
 
-- **[install-task.ps1](install-task.ps1)** - Install as Windows scheduled task (auto-start at login)
-- **[start-monitor.ps1](start-monitor.ps1)** - Manually start the monitor (interactive or background)
-- **[uninstall-task.ps1](uninstall-task.ps1)** - Remove scheduled task
+**Installation:**
+- **[install-task.ps1](install-task.ps1)** - Install as Windows scheduled task with OTLP configuration
+- **[uninstall-task.ps1](uninstall-task.ps1)** - Remove scheduled task and clean up files
+
+**Maintenance:**
+- **[start.ps1](start.ps1)** - Start the monitor (task scheduler or direct mode)
+- **[stop.ps1](stop.ps1)** - Stop the monitor
+- **[restart.ps1](restart.ps1)** - Restart the monitor
+- **[status.ps1](status.ps1)** - Show comprehensive status (process, task, logs, config)
+
+**Monitoring:**
 - **[view-logs.ps1](view-logs.ps1)** - View and tail log files
+
+**Legacy:**
+- **[start-monitor.ps1](start-monitor.ps1)** - Original manual start script (use `start.ps1` instead)
+
+📖 **Complete guide:** [guides/MAINTENANCE-SCRIPTS.md](guides/MAINTENANCE-SCRIPTS.md)
 
 ## 📖 Reading Order for New Developers
 
 1. **[../PROJECT-SUMMARY.md](../PROJECT-SUMMARY.md)** - Understand what the project does
 2. **[README.md](README.md)** - Learn how to use and install
-3. **[features/DRY-RUN-MODE.md](features/DRY-RUN-MODE.md)** - Test without system changes
-4. **[features/OPENTELEMETRY.md](features/OPENTELEMETRY.md)** - Observability features overview
-5. **[development/RESTRUCTURE.md](development/RESTRUCTURE.md)** - Understand code organization
+3. **[guides/MAINTENANCE-SCRIPTS.md](guides/MAINTENANCE-SCRIPTS.md)** - Learn the maintenance scripts
+4. **[features/DRY-RUN-MODE.md](features/DRY-RUN-MODE.md)** - Test without system changes
+5. **[features/OPENTELEMETRY.md](features/OPENTELEMETRY.md)** - Observability features overview
+6. **[development/RESTRUCTURE.md](development/RESTRUCTURE.md)** - Understand code organization
 
 ## 🔍 Finding Documentation
 
