@@ -44,7 +44,8 @@ Historical documents tracking the evolution of the codebase.
 ### `/guides` - User Guides & How-Tos
 Step-by-step guides for common tasks.
 
-- **[MAINTENANCE-SCRIPTS.md](guides/MAINTENANCE-SCRIPTS.md)** - Complete guide to installation and maintenance scripts
+- **[INSTALLATION.md](guides/INSTALLATION.md)** - Complete installation guide with installer script
+- **[MAINTENANCE-SCRIPTS.md](guides/MAINTENANCE-SCRIPTS.md)** - Complete guide to maintenance scripts
 
 ## 🛠️ PowerShell Scripts
 
@@ -71,11 +72,12 @@ These scripts are located in the `/docs` directory root:
 ## 📖 Reading Order for New Developers
 
 1. **[../PROJECT-SUMMARY.md](../PROJECT-SUMMARY.md)** - Understand what the project does
-2. **[README.md](README.md)** - Learn how to use and install
-3. **[guides/MAINTENANCE-SCRIPTS.md](guides/MAINTENANCE-SCRIPTS.md)** - Learn the maintenance scripts
-4. **[features/DRY-RUN-MODE.md](features/DRY-RUN-MODE.md)** - Test without system changes
-5. **[features/OPENTELEMETRY.md](features/OPENTELEMETRY.md)** - Observability features overview
-6. **[development/RESTRUCTURE.md](development/RESTRUCTURE.md)** - Understand code organization
+2. **[guides/INSTALLATION.md](guides/INSTALLATION.md)** - Learn how to install
+3. **[README.md](README.md)** - Learn how to use
+4. **[guides/MAINTENANCE-SCRIPTS.md](guides/MAINTENANCE-SCRIPTS.md)** - Learn the maintenance scripts
+5. **[features/DRY-RUN-MODE.md](features/DRY-RUN-MODE.md)** - Test without system changes
+6. **[features/OPENTELEMETRY.md](features/OPENTELEMETRY.md)** - Observability features overview
+7. **[development/RESTRUCTURE.md](development/RESTRUCTURE.md)** - Understand code organization
 
 ## 🔍 Finding Documentation
 
