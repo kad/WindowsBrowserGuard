@@ -23,6 +23,7 @@ var metrics registry.PerfMetrics
 func main() {
 	var (
 		dryRun      bool
+		quiet       bool
 		traceFile   string
 		otlpURL     string
 		otlpHeaders string
@@ -33,12 +34,13 @@ func main() {
 		Short:        "Monitor and block forced browser extension policies via Windows Registry",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runApp(dryRun, traceFile, otlpURL, otlpHeaders)
+			return runApp(dryRun, quiet, traceFile, otlpURL, otlpHeaders)
 		},
 	}
 
 	f := rootCmd.Flags()
 	f.BoolVar(&dryRun, "dry-run", false, "Read-only mode: detect and log planned operations without making changes")
+	f.BoolVar(&quiet, "quiet", false, "Suppress stdout logging (send logs to OTLP pipeline only)")
 	f.StringVar(&traceFile, "trace-file", "", "Output file for OpenTelemetry traces (use 'stdout' for console)")
 	f.StringVar(&otlpURL, "otlp-endpoint", "",
 		"OTLP endpoint URL — scheme sets protocol and TLS:\n"+
@@ -65,7 +67,11 @@ func parseHeaders(raw string) map[string]string {
 	return headers
 }
 
-func runApp(dryRun bool, traceFile, rawOTLPEndpoint, otlpHeaders string) error {
+func runApp(dryRun, quiet bool, traceFile, rawOTLPEndpoint, otlpHeaders string) error {
+	// Apply stdout suppression before any logging
+	if quiet {
+		telemetry.SetSuppressStdout(true)
+	}
 	// Parse OTLP endpoint URL → host:port, protocol, TLS setting
 	otlpHost, otlpProtocol, otlpInsecure, err := telemetry.ParseOTLPEndpoint(rawOTLPEndpoint)
 	if err != nil {
@@ -202,4 +208,3 @@ func runApp(dryRun bool, traceFile, rawOTLPEndpoint, otlpHeaders string) error {
 	monitor.WatchRegistryChanges(ctx, hKey, keyPath, previousState, canWrite, extensionIndex)
 	return nil
 }
-

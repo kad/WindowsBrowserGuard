@@ -29,13 +29,18 @@ import (
 )
 
 var (
-	tracer trace.Tracer
-	tp     *sdktrace.TracerProvider
-	logger log.Logger
-	lp     *sdklog.LoggerProvider
-	meter  metric.Meter
-	mp     *sdkmetric.MeterProvider
+	tracer         trace.Tracer
+	tp             *sdktrace.TracerProvider
+	logger         log.Logger
+	lp             *sdklog.LoggerProvider
+	meter          metric.Meter
+	mp             *sdkmetric.MeterProvider
+	suppressStdout bool
 )
+
+// SetSuppressStdout controls whether Printf/Println write to stdout.
+// When true, log output is sent to the OTel pipeline only.
+func SetSuppressStdout(v bool) { suppressStdout = v }
 
 // Config holds the configuration for telemetry
 type Config struct {
@@ -445,21 +450,25 @@ func emitLog(ctx context.Context, severity log.Severity, msg string, attrs ...at
 	logger.Emit(ctx, record)
 }
 
-// Printf formats a message and emits it to both stdout and the OTel log pipeline.
-// Use as a drop-in replacement for fmt.Printf to also export logs via OTLP.
+// Printf formats a message and emits it to stdout and the OTel log pipeline.
+// Stdout output is skipped when SetSuppressStdout(true) has been called.
 func Printf(ctx context.Context, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Print(msg)
+	if !suppressStdout {
+		fmt.Print(msg)
+	}
 	body := strings.TrimRight(msg, "\n\r")
 	if body != "" {
 		emitLog(ctx, log.SeverityInfo, body)
 	}
 }
 
-// Println emits args (space-separated) to both stdout and the OTel log pipeline.
-// Use as a drop-in replacement for fmt.Println to also export logs via OTLP.
+// Println emits args (space-separated) to stdout and the OTel log pipeline.
+// Stdout output is skipped when SetSuppressStdout(true) has been called.
 func Println(ctx context.Context, args ...interface{}) {
-	fmt.Println(args...)
+	if !suppressStdout {
+		fmt.Println(args...)
+	}
 	parts := make([]string, len(args))
 	for i, a := range args {
 		parts[i] = fmt.Sprint(a)
