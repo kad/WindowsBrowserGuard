@@ -36,11 +36,23 @@ var (
 	meter          metric.Meter
 	mp             *sdkmetric.MeterProvider
 	suppressStdout bool
+	logWriter      io.Writer // non-nil when --log-file is set
 )
 
 // SetSuppressStdout controls whether Printf/Println write to stdout.
 // When true, log output is sent to the OTel pipeline only.
 func SetSuppressStdout(v bool) { suppressStdout = v }
+
+// SetLogFile opens path in append mode and directs all Printf/Println output
+// to it in addition to (or instead of when --quiet) stdout.
+func SetLogFile(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("cannot open log file %q: %w", path, err)
+	}
+	logWriter = f
+	return nil
+}
 
 // Config holds the configuration for telemetry
 type Config struct {
@@ -457,6 +469,9 @@ func Printf(ctx context.Context, format string, args ...interface{}) {
 	if !suppressStdout {
 		fmt.Print(msg)
 	}
+	if logWriter != nil {
+		fmt.Fprint(logWriter, msg)
+	}
 	body := strings.TrimRight(msg, "\n\r")
 	if body != "" {
 		emitLog(ctx, log.SeverityInfo, body)
@@ -474,6 +489,9 @@ func Println(ctx context.Context, args ...interface{}) {
 		parts[i] = fmt.Sprint(a)
 	}
 	msg := strings.Join(parts, " ")
+	if logWriter != nil {
+		fmt.Fprintln(logWriter, msg)
+	}
 	if msg != "" {
 		emitLog(ctx, log.SeverityInfo, msg)
 	}

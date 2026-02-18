@@ -47,6 +47,9 @@ if ($Direct) {
     
     # Build command arguments
     $args = @()
+    if ($config.LogPath) {
+        $args += "--log-file=$($config.LogPath)"
+    }
     if ($config.OTLPEndpoint) {
         $ep = $config.OTLPEndpoint
         # Migrate legacy bare host:port (no scheme) to full URL using saved protocol/insecure fields
