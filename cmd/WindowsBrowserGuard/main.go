@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"flag"
+	"fmt"
+	"os"
 	"strings"
 	"syscall"
 	"time"
@@ -11,74 +12,110 @@ import (
 	"github.com/kad/WindowsBrowserGuard/pkg/monitor"
 	"github.com/kad/WindowsBrowserGuard/pkg/registry"
 	"github.com/kad/WindowsBrowserGuard/pkg/telemetry"
+	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sys/windows"
-)
-
-var (
-	// Command line flags
-	dryRun    = flag.Bool("dry-run", false, "Run in read-only mode without making changes")
-	traceFile = flag.String("trace-file", "", "Output file for OpenTelemetry traces (use 'stdout' for console output)")
-
-	// OTLP flags
-	otlpEndpoint = flag.String("otlp-endpoint", "", "OTLP endpoint (e.g., localhost:4317 or localhost:4318)")
-	otlpProtocol = flag.String("otlp-protocol", "grpc", "OTLP protocol: 'grpc' or 'http' (default: grpc)")
-	otlpInsecure = flag.Bool("otlp-insecure", false, "Disable TLS for OTLP connection")
-	otlpHeaders  = flag.String("otlp-headers", "", "OTLP headers as comma-separated key=value pairs (e.g., 'key1=val1,key2=val2')")
 )
 
 var extensionIndex *registry.ExtensionPathIndex
 var metrics registry.PerfMetrics
 
 func main() {
-	flag.Parse()
+	var (
+		dryRun      bool
+		traceFile   string
+		otlpURL     string
+		otlpHeaders string
+	)
 
-	// Parse OTLP headers
-	headers := make(map[string]string)
-	if *otlpHeaders != "" {
-		pairs := strings.Split(*otlpHeaders, ",")
-		for _, pair := range pairs {
-			kv := strings.SplitN(pair, "=", 2)
-			if len(kv) == 2 {
-				headers[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
-			}
-		}
+	rootCmd := &cobra.Command{
+		Use:          "WindowsBrowserGuard",
+		Short:        "Monitor and block forced browser extension policies via Windows Registry",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runApp(dryRun, traceFile, otlpURL, otlpHeaders)
+		},
 	}
 
-	// Initialize tracing
+	f := rootCmd.Flags()
+	f.BoolVar(&dryRun, "dry-run", false, "Read-only mode: detect and log planned operations without making changes")
+	f.StringVar(&traceFile, "trace-file", "", "Output file for OpenTelemetry traces (use 'stdout' for console)")
+	f.StringVar(&otlpURL, "otlp-endpoint", "",
+		"OTLP endpoint URL — scheme sets protocol and TLS:\n"+
+			"  grpc://host[:4317]   gRPC, no TLS\n"+
+			"  grpcs://host[:443]   gRPC, TLS\n"+
+			"  http://host[:4318]   HTTP, no TLS\n"+
+			"  https://host[:443]   HTTP, TLS")
+	f.StringVar(&otlpHeaders, "otlp-headers", "",
+		"OTLP headers as comma-separated key=value pairs (e.g. 'Authorization=Bearer token')")
+
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func parseHeaders(raw string) map[string]string {
+	headers := make(map[string]string)
+	for _, pair := range strings.Split(raw, ",") {
+		kv := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+		if len(kv) == 2 {
+			headers[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+	return headers
+}
+
+func runApp(dryRun bool, traceFile, rawOTLPEndpoint, otlpHeaders string) error {
+	// Parse OTLP endpoint URL → host:port, protocol, TLS setting
+	otlpHost, otlpProtocol, otlpInsecure, err := telemetry.ParseOTLPEndpoint(rawOTLPEndpoint)
+	if err != nil {
+		return fmt.Errorf("--otlp-endpoint: %w", err)
+	}
+
 	ctx := context.Background()
 	cfg := telemetry.Config{
-		TraceOutput:  *traceFile,
-		OTLPEndpoint: *otlpEndpoint,
-		OTLPProtocol: *otlpProtocol,
-		OTLPInsecure: *otlpInsecure,
-		OTLPHeaders:  headers,
+		TraceOutput:  traceFile,
+		OTLPEndpoint: otlpHost,
+		OTLPProtocol: otlpProtocol,
+		OTLPInsecure: otlpInsecure,
+		OTLPHeaders:  parseHeaders(otlpHeaders),
 	}
 
 	shutdown, err := telemetry.InitTracing(cfg)
 	if err != nil {
 		telemetry.Printf(ctx, "Warning: Failed to initialize tracing: %v\n", err)
-	} else if *traceFile != "" || *otlpEndpoint != "" {
-		if *otlpEndpoint != "" {
-			telemetry.Printf(ctx, "📊 Tracing enabled: OTLP %s://%s\n", *otlpProtocol, *otlpEndpoint)
+	} else if traceFile != "" || otlpHost != "" {
+		if otlpHost != "" {
+			var scheme string
+			switch {
+			case otlpProtocol == "grpc" && otlpInsecure:
+				scheme = "grpc"
+			case otlpProtocol == "grpc":
+				scheme = "grpcs"
+			case otlpInsecure:
+				scheme = "http"
+			default:
+				scheme = "https"
+			}
+			telemetry.Printf(ctx, "📊 Telemetry enabled: %s://%s\n", scheme, otlpHost)
 		} else {
-			telemetry.Printf(ctx, "📊 Tracing enabled: %s\n", *traceFile)
+			telemetry.Printf(ctx, "📊 Tracing enabled: %s\n", traceFile)
 		}
 		defer func() {
 			if err := shutdown(ctx); err != nil {
-				telemetry.Printf(ctx, "Warning: Failed to shutdown tracing: %v\n", err)
+				fmt.Printf("Warning: Failed to shutdown tracing: %v\n", err)
 			}
 		}()
 	}
 
 	// Start main application span
 	ctx, mainSpan := telemetry.StartSpan(ctx, "main.application",
-		attribute.Bool("dry-run", *dryRun),
+		attribute.Bool("dry-run", dryRun),
 	)
 	defer mainSpan.End()
 
-	hasAdmin := admin.CheckAdminAndElevate(*dryRun)
-	canWrite := hasAdmin && !*dryRun
+	hasAdmin := admin.CheckAdminAndElevate(dryRun)
+	canWrite := hasAdmin && !dryRun
 
 	telemetry.SetAttributes(ctx,
 		attribute.Bool("has-admin", hasAdmin),
@@ -104,7 +141,7 @@ func main() {
 	if err != nil {
 		telemetry.Println(ctx, "Error converting key path:", err)
 		telemetry.RecordError(ctx, err)
-		return
+		return err
 	}
 
 	var hKey windows.Handle
@@ -118,7 +155,7 @@ func main() {
 	if err != nil {
 		telemetry.Println(ctx, "Error opening registry key:", err)
 		telemetry.RecordError(ctx, err)
-		return
+		return err
 	}
 	defer windows.RegCloseKey(hKey)
 
@@ -128,7 +165,7 @@ func main() {
 	if err != nil {
 		telemetry.Println(ctx, "Error capturing initial state:", err)
 		telemetry.RecordError(ctx, err)
-		return
+		return err
 	}
 	scanDuration := time.Since(startTime)
 	metrics.StartupTime = scanDuration
@@ -163,4 +200,6 @@ func main() {
 	monitor.CleanupExtensionSettings(ctx, keyPath, previousState, canWrite, extensionIndex)
 
 	monitor.WatchRegistryChanges(ctx, hKey, keyPath, previousState, canWrite, extensionIndex)
+	return nil
 }
+

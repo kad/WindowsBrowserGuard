@@ -48,11 +48,18 @@ if ($Direct) {
     # Build command arguments
     $args = @()
     if ($config.OTLPEndpoint) {
-        $args += "--otlp-endpoint=$($config.OTLPEndpoint)"
-        $args += "--otlp-protocol=$($config.OTLPProtocol)"
-        if ($config.OTLPInsecure) {
-            $args += "--otlp-insecure"
+        $ep = $config.OTLPEndpoint
+        # Migrate legacy bare host:port (no scheme) to full URL using saved protocol/insecure fields
+        if ($ep -notlike "*://*") {
+            $protocol = if ($config.OTLPProtocol) { $config.OTLPProtocol } else { "grpc" }
+            $scheme = if ($protocol -eq "http") {
+                if ($config.OTLPInsecure) { "http" } else { "https" }
+            } else {
+                if ($config.OTLPInsecure) { "grpc" } else { "grpcs" }
+            }
+            $ep = "${scheme}://$ep"
         }
+        $args += "--otlp-endpoint=$ep"
     }
     
     Write-Host "Starting process..." -ForegroundColor Cyan

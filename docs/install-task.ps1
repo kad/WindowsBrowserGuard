@@ -42,33 +42,21 @@ Write-Host "──────────────────────�
 $configureOTLP = Read-Host "Do you want to configure OTLP endpoint for telemetry? (Y/N)"
 
 $otlpEndpoint = ""
-$otlpProtocol = "grpc"
-$otlpInsecure = $false
 
 if ($configureOTLP -eq 'Y' -or $configureOTLP -eq 'y') {
     Write-Host ""
-    Write-Host "OTLP Endpoint Examples:" -ForegroundColor Yellow
-    Write-Host "  • localhost:4317 (gRPC - default)" -ForegroundColor Gray
-    Write-Host "  • localhost:4318 (HTTP)" -ForegroundColor Gray
-    Write-Host "  • otel-collector.company.com:4317" -ForegroundColor Gray
+    Write-Host "OTLP Endpoint URL Examples:" -ForegroundColor Yellow
+    Write-Host "  • grpc://localhost:4317    (gRPC, local, no TLS)" -ForegroundColor Gray
+    Write-Host "  • grpcs://collector:4317   (gRPC, remote, TLS)" -ForegroundColor Gray
+    Write-Host "  • http://localhost:4318    (HTTP, local, no TLS)" -ForegroundColor Gray
+    Write-Host "  • https://otlp.corp.com    (HTTP, remote, TLS port 443)" -ForegroundColor Gray
     Write-Host ""
-    
-    $otlpEndpoint = Read-Host "OTLP Endpoint (host:port)"
-    
+
+    $otlpEndpoint = Read-Host "OTLP Endpoint URL"
+
     if ($otlpEndpoint) {
-        $protocolChoice = Read-Host "Protocol: (1) gRPC [default] or (2) HTTP?"
-        if ($protocolChoice -eq '2') {
-            $otlpProtocol = "http"
-        }
-        
-        $insecureChoice = Read-Host "Disable TLS (use for local testing)? (Y/N)"
-        $otlpInsecure = ($insecureChoice -eq 'Y' -or $insecureChoice -eq 'y')
-        
         Write-Host ""
-        Write-Host "✓ OTLP Configuration:" -ForegroundColor Green
-        Write-Host "  Endpoint: $otlpEndpoint" -ForegroundColor Gray
-        Write-Host "  Protocol: $otlpProtocol" -ForegroundColor Gray
-        Write-Host "  Insecure: $otlpInsecure" -ForegroundColor Gray
+        Write-Host "✓ OTLP Endpoint: $otlpEndpoint" -ForegroundColor Green
     }
 }
 Write-Host ""
@@ -92,10 +80,8 @@ if ($existingTask) {
 Write-Host "Saving configuration..." -ForegroundColor Cyan
 $config = @{
     OTLPEndpoint = $otlpEndpoint
-    OTLPProtocol = $otlpProtocol
-    OTLPInsecure = $otlpInsecure
-    ExePath = $exePath
-    LogPath = $logPath
+    ExePath  = $exePath
+    LogPath  = $logPath
     TaskName = $taskName
 }
 $config | ConvertTo-Json | Set-Content -Path $configPath -Force
@@ -105,10 +91,6 @@ Write-Host "✓ Configuration saved: $configPath" -ForegroundColor Green
 $cmdArgs = ""
 if ($otlpEndpoint) {
     $cmdArgs += " --otlp-endpoint=`"$otlpEndpoint`""
-    $cmdArgs += " --otlp-protocol=$otlpProtocol"
-    if ($otlpInsecure) {
-        $cmdArgs += " --otlp-insecure"
-    }
 }
 
 # Create wrapper script that redirects output to log file
