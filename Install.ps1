@@ -20,8 +20,9 @@ if (-not $isAdmin) {
                  '-InstallPath', "`"$InstallPath`"")
     if ($SkipTaskSetup) { $argList += '-SkipTaskSetup' }
     if ($Unattended)    { $argList += '-Unattended' }
-    Start-Process -FilePath 'powershell.exe' -ArgumentList $argList -Verb RunAs -Wait
-    exit $LASTEXITCODE
+    $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $argList `
+                -Verb RunAs -WindowStyle Normal -Wait -PassThru
+    exit $proc.ExitCode
 }
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -267,8 +268,9 @@ param([switch]`$Unattended)
 if (-not `$isAdmin) {
     `$argList = @('-NoProfile','-ExecutionPolicy','Bypass','-File',"`"`$PSCommandPath`"")
     if (`$Unattended) { `$argList += '-Unattended' }
-    Start-Process powershell.exe -ArgumentList `$argList -Verb RunAs -Wait
-    exit `$LASTEXITCODE
+    `$proc = Start-Process powershell.exe -ArgumentList `$argList `
+                -Verb RunAs -WindowStyle Normal -Wait -PassThru
+    exit `$proc.ExitCode
 }
 
 `$installPath = '$($InstallPath -replace "'","''")'
