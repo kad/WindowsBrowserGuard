@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"strings"
 	"syscall"
 	"time"
@@ -58,16 +57,16 @@ func main() {
 
 	shutdown, err := telemetry.InitTracing(cfg)
 	if err != nil {
-		fmt.Printf("Warning: Failed to initialize tracing: %v\n", err)
+		telemetry.Printf(ctx, "Warning: Failed to initialize tracing: %v\n", err)
 	} else if *traceFile != "" || *otlpEndpoint != "" {
 		if *otlpEndpoint != "" {
-			fmt.Printf("📊 Tracing enabled: OTLP %s://%s\n", *otlpProtocol, *otlpEndpoint)
+			telemetry.Printf(ctx, "📊 Tracing enabled: OTLP %s://%s\n", *otlpProtocol, *otlpEndpoint)
 		} else {
-			fmt.Printf("📊 Tracing enabled: %s\n", *traceFile)
+			telemetry.Printf(ctx, "📊 Tracing enabled: %s\n", *traceFile)
 		}
 		defer func() {
 			if err := shutdown(ctx); err != nil {
-				fmt.Printf("Warning: Failed to shutdown tracing: %v\n", err)
+				telemetry.Printf(ctx, "Warning: Failed to shutdown tracing: %v\n", err)
 			}
 		}()
 	}
@@ -91,19 +90,19 @@ func main() {
 	if canWrite {
 		canDelete := admin.CanDeleteRegistryKey(keyPath)
 		if !canDelete {
-			fmt.Println("⚠️  WARNING: Insufficient permissions to delete registry keys")
-			fmt.Println("Key deletion features will be disabled.")
+			telemetry.Println(ctx, "⚠️  WARNING: Insufficient permissions to delete registry keys")
+			telemetry.Println(ctx, "Key deletion features will be disabled.")
 			canWrite = false
 			telemetry.AddEvent(ctx, "insufficient-permissions")
 		} else {
-			fmt.Println("✓ Registry deletion permissions verified")
+			telemetry.Println(ctx, "✓ Registry deletion permissions verified")
 			telemetry.AddEvent(ctx, "permissions-verified")
 		}
 	}
 
 	key, err := syscall.UTF16PtrFromString(keyPath)
 	if err != nil {
-		fmt.Println("Error converting key path:", err)
+		telemetry.Println(ctx, "Error converting key path:", err)
 		telemetry.RecordError(ctx, err)
 		return
 	}
@@ -117,17 +116,17 @@ func main() {
 
 	err = windows.RegOpenKeyEx(windows.HKEY_LOCAL_MACHINE, key, 0, permissions, &hKey)
 	if err != nil {
-		fmt.Println("Error opening registry key:", err)
+		telemetry.Println(ctx, "Error opening registry key:", err)
 		telemetry.RecordError(ctx, err)
 		return
 	}
 	defer windows.RegCloseKey(hKey)
 
-	fmt.Println("Capturing initial registry state...")
+	telemetry.Println(ctx, "Capturing initial registry state...")
 	startTime := time.Now()
 	previousState, err := monitor.CaptureRegistryState(ctx, hKey, keyPath)
 	if err != nil {
-		fmt.Println("Error capturing initial state:", err)
+		telemetry.Println(ctx, "Error capturing initial state:", err)
 		telemetry.RecordError(ctx, err)
 		return
 	}
@@ -141,10 +140,10 @@ func main() {
 		attribute.String("initial.scan-duration", scanDuration.String()),
 	)
 
-	fmt.Printf("Initial state: %d subkeys, %d values (captured in %v)\n",
+	telemetry.Printf(ctx, "Initial state: %d subkeys, %d values (captured in %v)\n",
 		len(previousState.Subkeys), len(previousState.Values), scanDuration)
 
-	fmt.Println("Building extension path index...")
+	telemetry.Println(ctx, "Building extension path index...")
 	indexStart := time.Now()
 	extensionIndex = registry.NewExtensionPathIndex()
 	extensionIndex.BuildFromState(previousState)
@@ -156,7 +155,7 @@ func main() {
 		attribute.String("index.build-duration", indexDuration.String()),
 	)
 
-	fmt.Printf("Index built: tracking %d unique extension IDs (in %v)\n",
+	telemetry.Printf(ctx, "Index built: tracking %d unique extension IDs (in %v)\n",
 		extensionIndex.GetCount(), indexDuration)
 
 	monitor.ProcessExistingPolicies(ctx, keyPath, previousState, canWrite, extensionIndex)

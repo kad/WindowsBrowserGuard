@@ -51,6 +51,11 @@ type Config struct {
 
 // InitTracing initializes OpenTelemetry tracing with the specified configuration
 func InitTracing(cfg Config) (func(context.Context) error, error) {
+	// Surface OTel internal errors (e.g., failed exports) to stdout so they appear in logs
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		fmt.Printf("[OTEL ERROR] %v\n", err)
+	}))
+
 	// If no trace output and no OTLP endpoint, tracing is disabled
 	if cfg.TraceOutput == "" && cfg.OTLPEndpoint == "" {
 		tracer = otel.Tracer("windowsbrowserguard")
@@ -415,10 +420,19 @@ func emitLog(ctx context.Context, severity log.Severity, msg string, attrs ...at
 		return // Logging not initialized
 	}
 
-	// Convert attributes to log.KeyValue
+	// Convert attributes to log.KeyValue, preserving type information
 	logAttrs := make([]log.KeyValue, len(attrs))
 	for i, attr := range attrs {
-		logAttrs[i] = log.String(string(attr.Key), attr.Value.AsString())
+		switch attr.Value.Type() {
+		case attribute.INT64:
+			logAttrs[i] = log.Int(string(attr.Key), int(attr.Value.AsInt64()))
+		case attribute.FLOAT64:
+			logAttrs[i] = log.Float64(string(attr.Key), attr.Value.AsFloat64())
+		case attribute.BOOL:
+			logAttrs[i] = log.Bool(string(attr.Key), attr.Value.AsBool())
+		default:
+			logAttrs[i] = log.String(string(attr.Key), attr.Value.AsString())
+		}
 	}
 
 	// Create the log record
@@ -429,6 +443,31 @@ func emitLog(ctx context.Context, severity log.Severity, msg string, attrs ...at
 	record.AddAttributes(logAttrs...)
 
 	logger.Emit(ctx, record)
+}
+
+// Printf formats a message and emits it to both stdout and the OTel log pipeline.
+// Use as a drop-in replacement for fmt.Printf to also export logs via OTLP.
+func Printf(ctx context.Context, format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	fmt.Print(msg)
+	body := strings.TrimRight(msg, "\n\r")
+	if body != "" {
+		emitLog(ctx, log.SeverityInfo, body)
+	}
+}
+
+// Println emits args (space-separated) to both stdout and the OTel log pipeline.
+// Use as a drop-in replacement for fmt.Println to also export logs via OTLP.
+func Println(ctx context.Context, args ...interface{}) {
+	fmt.Println(args...)
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = fmt.Sprint(a)
+	}
+	msg := strings.Join(parts, " ")
+	if msg != "" {
+		emitLog(ctx, log.SeverityInfo, msg)
+	}
 }
 
 // Metrics functions
