@@ -1,0 +1,48 @@
+# CI workflow — build and vet on every push / pull request
+name: CI
+
+on:
+  push:
+    branches: [ '**' ]
+    tags-ignore: [ 'v*' ]   # releases are handled by release.yml
+  pull_request:
+    branches: [ '**' ]
+
+jobs:
+  build:
+    # Windows runner required: package imports golang.org/x/sys/windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build -trimpath -o WindowsBrowserGuard.exe ./cmd/WindowsBrowserGuard
+
+  goreleaser-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check GoReleaser config
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: check
