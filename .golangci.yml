@@ -39,6 +39,13 @@ linters:
         - G302  # file perms 0644 — acceptable for append-only log file
         - G304  # file via variable — intentional (--config flag)
 
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+
 formatters:
   enable:
     - gofmt
@@ -52,10 +59,3 @@ formatters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-
-exclusions:
-  rules:
-    - path: _test\.go
-      linters:
-        - gosec
-        - errcheck
