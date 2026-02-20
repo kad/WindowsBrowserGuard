@@ -1,1 +1,57 @@
+# ── Go ────────────────────────────────────────────────────────────────────────
 *.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Build output
+dist/
+bin/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency vendor directory (if not vendoring)
+vendor/
+
+# Test coverage
+coverage.out
+coverage.html
+
+# ── GoReleaser ────────────────────────────────────────────────────────────────
+# Local snapshot builds
+dist/
+
+# ── Windows ───────────────────────────────────────────────────────────────────
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Windows installer artifacts
+*.msi
+*.msm
+*.msp
+
+# ── IDE / editors ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.swp
+*.swo
+*~
+
+# ── Project-specific ──────────────────────────────────────────────────────────
+# Local config (installed copy — not the example)
+config.json
+# Log files
+*.log
