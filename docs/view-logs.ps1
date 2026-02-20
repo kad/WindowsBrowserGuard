@@ -1,21 +1,30 @@
 # Windows Browser Guard - Log Viewer Script
-# This script provides an easy way to view monitor logs
 
-# Configuration
 $scriptDir = $PSScriptRoot
-$logPath = Join-Path $scriptDir "WindowsBrowserGuard-log.txt"
+$configPath = Join-Path $scriptDir "config.json"
+
+# Resolve log path: prefer config.json, fall back to default
+$logPath = "C:\ProgramData\WindowsBrowserGuard\monitor.log"
+if (Test-Path $configPath) {
+    try {
+        $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
+        if ($cfg.LogPath) { $logPath = $cfg.LogPath }
+    } catch { }
+}
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Windows Browser Guard - Log Viewer" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Log file: $logPath" -ForegroundColor Gray
 Write-Host ""
 
 # Check if log file exists
 if (-not (Test-Path $logPath)) {
     Write-Host "❌ Log file not found: $logPath" -ForegroundColor Red
     Write-Host ""
-    Write-Host "The log file will be created when the monitor starts running" -ForegroundColor Gray
-    Write-Host "Make sure you installed the monitor using install-task.ps1" -ForegroundColor Gray
+    Write-Host "The log file will be created when the monitor starts running." -ForegroundColor Gray
+    Write-Host "Run Install.ps1 or start the scheduled task to begin monitoring." -ForegroundColor Gray
     Write-Host ""
     pause
     exit 1
@@ -31,7 +40,6 @@ $fileSize = if ($fileInfo.Length -lt 1KB) {
     "{0:N2} MB" -f ($fileInfo.Length / 1MB)
 }
 
-Write-Host "Log file: $logPath" -ForegroundColor Gray
 Write-Host "Size:     $fileSize" -ForegroundColor Gray
 Write-Host "Modified: $($fileInfo.LastWriteTime)" -ForegroundColor Gray
 Write-Host ""
