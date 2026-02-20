@@ -10,13 +10,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sys/windows"
+
 	"github.com/kad/WindowsBrowserGuard/pkg/admin"
 	"github.com/kad/WindowsBrowserGuard/pkg/monitor"
 	"github.com/kad/WindowsBrowserGuard/pkg/registry"
 	"github.com/kad/WindowsBrowserGuard/pkg/telemetry"
-	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel/attribute"
-	"golang.org/x/sys/windows"
 )
 
 var extensionIndex *registry.ExtensionPathIndex
@@ -228,7 +229,7 @@ func runApp(dryRun, quiet bool, logFilePath, traceFile, rawOTLPEndpoint, otlpHea
 		telemetry.RecordError(ctx, err)
 		return err
 	}
-	defer windows.RegCloseKey(hKey)
+	defer func() { _ = windows.RegCloseKey(hKey) }()
 
 	telemetry.Println(ctx, "Capturing initial registry state...")
 	startTime := time.Now()

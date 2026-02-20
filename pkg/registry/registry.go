@@ -8,20 +8,20 @@ import (
 	"time"
 	"unsafe"
 
+	"golang.org/x/sys/windows"
+
 	"github.com/kad/WindowsBrowserGuard/pkg/buffers"
 	"github.com/kad/WindowsBrowserGuard/pkg/detection"
 	"github.com/kad/WindowsBrowserGuard/pkg/pathutils"
-	"golang.org/x/sys/windows"
 )
 
 var (
-	advapi32         = syscall.NewLazyDLL("advapi32.dll")
-	regEnumValueW    = advapi32.NewProc("RegEnumValueW")
-	regQueryInfoKeyW = advapi32.NewProc("RegQueryInfoKeyW")
-	regDeleteKeyW    = advapi32.NewProc("RegDeleteKeyW")
-	regSetValueExW   = advapi32.NewProc("RegSetValueExW")
-	regCreateKeyExW  = advapi32.NewProc("RegCreateKeyExW")
-	regDeleteValueW  = advapi32.NewProc("RegDeleteValueW")
+	advapi32        = syscall.NewLazyDLL("advapi32.dll")
+	regEnumValueW   = advapi32.NewProc("RegEnumValueW")
+	regDeleteKeyW   = advapi32.NewProc("RegDeleteKeyW")
+	regSetValueExW  = advapi32.NewProc("RegSetValueExW")
+	regCreateKeyExW = advapi32.NewProc("RegCreateKeyExW")
+	regDeleteValueW = advapi32.NewProc("RegDeleteValueW")
 )
 
 type RegValue struct {
@@ -302,7 +302,7 @@ func DeleteRegistryKey(baseKeyPath, relativePath string, dryRun bool) error {
 	if err != nil {
 		return fmt.Errorf("error opening key for deletion: %v", err)
 	}
-	defer windows.RegCloseKey(hKey)
+	defer func() { _ = windows.RegCloseKey(hKey) }()
 
 	ret, _, _ := regDeleteKeyW.Call(uintptr(hKey), uintptr(0))
 	if ret != 0 {
@@ -431,7 +431,7 @@ func AddToBlocklist(baseKeyPath, blocklistPath, extensionID string, dryRun bool)
 	if ret != 0 {
 		return fmt.Errorf("error creating/opening blocklist key: error code %d", ret)
 	}
-	defer windows.RegCloseKey(hKey)
+	defer func() { _ = windows.RegCloseKey(hKey) }()
 
 	existingValues, _ := ReadKeyValues(baseKeyPath, blocklistPath)
 
@@ -509,7 +509,7 @@ func BlockFirefoxExtension(baseKeyPath, extensionID string, dryRun bool) error {
 	if ret != 0 {
 		return fmt.Errorf("error creating blocklist key: error code %d", ret)
 	}
-	defer windows.RegCloseKey(hKey)
+	defer func() { _ = windows.RegCloseKey(hKey) }()
 
 	valueNamePtr, _ := syscall.UTF16PtrFromString("installation_mode")
 	valueDataUTF16, _ := syscall.UTF16FromString("blocked")
@@ -556,7 +556,7 @@ func RemoveFromAllowlist(baseKeyPath, allowlistPath, extensionID string, dryRun 
 		}
 		return fmt.Errorf("error opening allowlist key: %v", err)
 	}
-	defer windows.RegCloseKey(hKey)
+	defer func() { _ = windows.RegCloseKey(hKey) }()
 
 	existingValues, err := ReadKeyValues(baseKeyPath, allowlistPath)
 	if err != nil {

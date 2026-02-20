@@ -6,13 +6,14 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sys/windows"
+
 	"github.com/kad/WindowsBrowserGuard/pkg/admin"
 	"github.com/kad/WindowsBrowserGuard/pkg/detection"
 	"github.com/kad/WindowsBrowserGuard/pkg/pathutils"
 	"github.com/kad/WindowsBrowserGuard/pkg/registry"
 	"github.com/kad/WindowsBrowserGuard/pkg/telemetry"
-	"go.opentelemetry.io/otel/attribute"
-	"golang.org/x/sys/windows"
 )
 
 // CaptureRegistryState captures the current state of a registry key and all its subkeys

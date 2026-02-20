@@ -5,8 +5,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/kad/WindowsBrowserGuard/pkg/pathutils"
 	"golang.org/x/sys/windows"
+
+	"github.com/kad/WindowsBrowserGuard/pkg/pathutils"
 )
 
 // ============================================================================

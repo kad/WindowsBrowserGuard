@@ -81,7 +81,7 @@ func InitTracing(cfg Config) (func(context.Context) error, error) {
 
 	var exporter sdktrace.SpanExporter
 	var err error
-	var closeFunc func() error = func() error { return nil }
+	var closeFunc = func() error { return nil }
 
 	// Determine which exporter to use
 	if cfg.OTLPEndpoint != "" {
