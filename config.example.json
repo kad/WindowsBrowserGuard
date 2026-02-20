@@ -1,0 +1,22 @@
+{
+  "_comment": "Rename this file to config.json in the same directory as WindowsBrowserGuard.exe",
+
+  "OTLPEndpoint": "",
+  "_OTLPEndpoint_examples": [
+    "grpc://localhost:4317",
+    "grpcs://collector.corp.com:443",
+    "http://localhost:4318",
+    "https://otlp.corp.com"
+  ],
+
+  "OTLPHeaders": "",
+  "_OTLPHeaders_example": "Authorization=Bearer mytoken,X-Custom-Header=value",
+
+  "LogPath": "C:\\ProgramData\\WindowsBrowserGuard\\monitor.log",
+
+  "DryRun": false,
+  "_DryRun_comment": "Read-only mode — detect and log without making registry changes",
+
+  "Quiet": false,
+  "_Quiet_comment": "Suppress stdout; send logs to OTLP/log-file only"
+}

@@ -49,6 +49,7 @@ archives:
     files:
       - README.md
       - Install.ps1
+      - config.example.json
       - docs/start.ps1
       - docs/stop.ps1
       - docs/restart.ps1
