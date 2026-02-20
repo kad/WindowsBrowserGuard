@@ -6,7 +6,7 @@ param(
 )
 
 $scriptDir = $PSScriptRoot
-$configPath = Join-Path $scriptDir "WindowsBrowserGuard-config.json"
+$configPath = Join-Path $scriptDir "config.json"
 $taskName = "WindowsBrowserGuard"
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -14,10 +14,10 @@ Write-Host "Starting Windows Browser Guard" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Load configuration
+# Load configuration (for task name)
 if (Test-Path $configPath) {
     $config = Get-Content $configPath | ConvertFrom-Json
-    $taskName = $config.TaskName
+    if ($config.TaskName) { $taskName = $config.TaskName }
 } else {
     Write-Host "⚠️  Configuration not found. Using defaults." -ForegroundColor Yellow
 }
@@ -45,24 +45,11 @@ if ($Direct) {
         }
     }
     
-    # Build command arguments
+    # Build command arguments — binary reads config.json automatically from its
+    # own directory, but we pass --config explicitly to be unambiguous.
     $args = @()
-    if ($config.LogPath) {
-        $args += "--log-file=$($config.LogPath)"
-    }
-    if ($config.OTLPEndpoint) {
-        $ep = $config.OTLPEndpoint
-        # Migrate legacy bare host:port (no scheme) to full URL using saved protocol/insecure fields
-        if ($ep -notlike "*://*") {
-            $protocol = if ($config.OTLPProtocol) { $config.OTLPProtocol } else { "grpc" }
-            $scheme = if ($protocol -eq "http") {
-                if ($config.OTLPInsecure) { "http" } else { "https" }
-            } else {
-                if ($config.OTLPInsecure) { "grpc" } else { "grpcs" }
-            }
-            $ep = "${scheme}://$ep"
-        }
-        $args += "--otlp-endpoint=$ep"
+    if (Test-Path $configPath) {
+        $args += "--config=`"$configPath`""
     }
     
     Write-Host "Starting process..." -ForegroundColor Cyan

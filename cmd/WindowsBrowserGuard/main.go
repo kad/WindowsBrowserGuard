@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -20,8 +22,42 @@ import (
 var extensionIndex *registry.ExtensionPathIndex
 var metrics registry.PerfMetrics
 
+// fileConfig holds values loaded from config.json; CLI flags override these.
+type fileConfig struct {
+	OTLPEndpoint string `json:"OTLPEndpoint"`
+	OTLPHeaders  string `json:"OTLPHeaders"`
+	LogPath      string `json:"LogPath"`
+	DryRun       bool   `json:"DryRun"`
+	Quiet        bool   `json:"Quiet"`
+}
+
+// loadFileConfig reads config from path. If path is empty it looks for
+// config.json next to the running executable. Missing file is not an error.
+func loadFileConfig(cfgPath string) (*fileConfig, error) {
+	if cfgPath == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return &fileConfig{}, nil
+		}
+		cfgPath = filepath.Join(filepath.Dir(exe), "config.json")
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &fileConfig{}, nil
+		}
+		return nil, fmt.Errorf("reading config %s: %w", cfgPath, err)
+	}
+	var cfg fileConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config %s: %w", cfgPath, err)
+	}
+	return &cfg, nil
+}
+
 func main() {
 	var (
+		configFile  string
 		dryRun      bool
 		quiet       bool
 		logFilePath string
@@ -35,11 +71,32 @@ func main() {
 		Short:        "Monitor and block forced browser extension policies via Windows Registry",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Load config file; CLI flags override config file values.
+			fileCfg, err := loadFileConfig(configFile)
+			if err != nil {
+				return err
+			}
+			if !cmd.Flags().Changed("otlp-endpoint") && fileCfg.OTLPEndpoint != "" {
+				otlpURL = fileCfg.OTLPEndpoint
+			}
+			if !cmd.Flags().Changed("otlp-headers") && fileCfg.OTLPHeaders != "" {
+				otlpHeaders = fileCfg.OTLPHeaders
+			}
+			if !cmd.Flags().Changed("log-file") && fileCfg.LogPath != "" {
+				logFilePath = fileCfg.LogPath
+			}
+			if !cmd.Flags().Changed("dry-run") && fileCfg.DryRun {
+				dryRun = true
+			}
+			if !cmd.Flags().Changed("quiet") && fileCfg.Quiet {
+				quiet = true
+			}
 			return runApp(dryRun, quiet, logFilePath, traceFile, otlpURL, otlpHeaders)
 		},
 	}
 
 	f := rootCmd.Flags()
+	f.StringVar(&configFile, "config", "", "Path to config JSON file (default: config.json next to executable)")
 	f.BoolVar(&dryRun, "dry-run", false, "Read-only mode: detect and log planned operations without making changes")
 	f.BoolVar(&quiet, "quiet", false, "Suppress stdout logging (send logs to OTLP pipeline only)")
 	f.StringVar(&logFilePath, "log-file", "", "Path to log file; output is appended (always active, independent of --quiet)")
