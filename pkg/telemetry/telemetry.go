@@ -470,7 +470,7 @@ func Printf(ctx context.Context, format string, args ...interface{}) {
 		fmt.Print(msg)
 	}
 	if logWriter != nil {
-		fmt.Fprint(logWriter, msg)
+		_, _ = fmt.Fprint(logWriter, msg)
 	}
 	body := strings.TrimRight(msg, "\n\r")
 	if body != "" {
@@ -490,7 +490,7 @@ func Println(ctx context.Context, args ...interface{}) {
 	}
 	msg := strings.Join(parts, " ")
 	if logWriter != nil {
-		fmt.Fprintln(logWriter, msg)
+		_, _ = fmt.Fprintln(logWriter, msg)
 	}
 	if msg != "" {
 		emitLog(ctx, log.SeverityInfo, msg)

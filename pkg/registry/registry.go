@@ -211,7 +211,7 @@ func CaptureKeyRecursive(hKey windows.Handle, relativePath string, state *RegSta
 		fullPath := pathutils.BuildPath(relativePath, subkeyName)
 
 		err = CaptureKeyRecursive(hSubKey, fullPath, state, depth+1)
-		windows.RegCloseKey(hSubKey)
+		_ = windows.RegCloseKey(hSubKey)
 
 		if err != nil {
 			return err
@@ -237,7 +237,7 @@ func ReadKeyValues(baseKeyPath, relativePath string) (map[string]string, error) 
 	if err != nil {
 		return nil, fmt.Errorf("error opening key: %v", err)
 	}
-	defer windows.RegCloseKey(hKey)
+	defer func() { _ = windows.RegCloseKey(hKey) }()
 
 	values := make(map[string]string)
 	var index uint32
@@ -333,7 +333,7 @@ func DeleteRegistryKeyRecursive(baseKeyPath, relativePath string, dryRun bool) e
 	if err != nil {
 		return fmt.Errorf("error opening key: %v", err)
 	}
-	defer windows.RegCloseKey(hKey)
+	defer func() { _ = windows.RegCloseKey(hKey) }()
 
 	for {
 		nameBuf := make([]uint16, 256)
@@ -359,9 +359,8 @@ func DeleteRegistryKeyRecursive(baseKeyPath, relativePath string, dryRun bool) e
 		}
 	}
 
-	windows.RegCloseKey(hKey)
+	_ = windows.RegCloseKey(hKey)
 
-	keyPtr, _ = syscall.UTF16PtrFromString(relativePath)
 	parentPath := baseKeyPath
 	if relativePath != "" {
 		lastSlash := -1
@@ -386,7 +385,7 @@ func DeleteRegistryKeyRecursive(baseKeyPath, relativePath string, dryRun bool) e
 		if err != nil {
 			return fmt.Errorf("error opening parent key: %v", err)
 		}
-		defer windows.RegCloseKey(hParentKey)
+		defer func() { _ = windows.RegCloseKey(hParentKey) }()
 
 		ret, _, _ := regDeleteKeyW.Call(uintptr(hParentKey), uintptr(unsafe.Pointer(keyPtr)))
 		if ret != 0 {

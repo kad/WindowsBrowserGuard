@@ -30,7 +30,7 @@ func IsAdmin() bool {
 	if err != nil {
 		return false
 	}
-	defer windows.FreeSid(sid)
+	defer func() { _ = windows.FreeSid(sid) }()
 
 	token := windows.GetCurrentProcessToken()
 	member, err := token.IsMember(sid)
@@ -89,7 +89,7 @@ func CanDeleteRegistryKey(keyPath string) bool {
 	if err != nil {
 		return false
 	}
-	windows.RegCloseKey(hKey)
+	_ = windows.RegCloseKey(hKey)
 	return true
 }
 
@@ -99,7 +99,7 @@ func CheckAdminAndElevate(dryRun bool) bool {
 	if dryRun {
 		fmt.Println("🔍 DRY-RUN MODE: Running in read-only mode")
 		fmt.Println("   No changes will be made to the registry")
-		fmt.Println("   All write/delete operations will be simulated\n")
+		fmt.Println("   All write/delete operations will be simulated")
 		return false
 	}
 
@@ -114,7 +114,7 @@ func CheckAdminAndElevate(dryRun bool) bool {
 			fmt.Println("\nPlease run this program as Administrator to enable key deletion.")
 			fmt.Println("Or use --dry-run flag to test in read-only mode.")
 			fmt.Println("Press Enter to continue in read-only mode...")
-			fmt.Scanln()
+			_, _ = fmt.Scanln()
 			return false
 		} else {
 			fmt.Println("✓ Relaunching with elevated privileges...")

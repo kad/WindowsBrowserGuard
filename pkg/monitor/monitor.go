@@ -536,7 +536,7 @@ func WatchRegistryChanges(ctx context.Context, hKey windows.Handle, keyPath stri
 		telemetry.RecordError(ctx, err)
 		return
 	}
-	defer windows.CloseHandle(event)
+	defer func() { _ = windows.CloseHandle(event) }()
 
 	err = windows.RegNotifyChangeKeyValue(hKey, true, windows.REG_NOTIFY_CHANGE_NAME|windows.REG_NOTIFY_CHANGE_LAST_SET, event, true)
 	if err != nil {
