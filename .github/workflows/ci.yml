@@ -32,7 +32,25 @@ jobs:
       - name: Build
         run: go build -trimpath -o WindowsBrowserGuard.exe ./cmd/WindowsBrowserGuard
 
-  goreleaser-check:
+  lint:
+    # Windows runner required: package imports golang.org/x/sys/windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false  # golangci-lint manages its own cache
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: '~v2'
+
+
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
