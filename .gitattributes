@@ -1,0 +1,41 @@
+# ── Default ───────────────────────────────────────────────────────────────────
+# Normalize line endings to LF in the repository; check out as-is on all platforms.
+* text=auto eol=lf
+
+# ── Go source ─────────────────────────────────────────────────────────────────
+*.go    text eol=lf diff=golang
+go.mod  text eol=lf
+go.sum  text eol=lf
+
+# ── Shell / PowerShell ────────────────────────────────────────────────────────
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.psd1  text eol=crlf
+
+# ── Config / data ─────────────────────────────────────────────────────────────
+*.json  text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.toml  text eol=lf
+*.xml   text eol=lf
+*.env   text eol=lf
+
+# ── Docs ──────────────────────────────────────────────────────────────────────
+*.md    text eol=lf
+*.txt   text eol=lf
+
+# ── Binaries — never diff or convert ─────────────────────────────────────────
+*.exe   binary
+*.dll   binary
+*.so    binary
+*.dylib binary
+*.zip   binary
+*.tar   binary
+*.gz    binary
+*.msi   binary
+*.png   binary
+*.jpg   binary
+*.gif   binary
+*.ico   binary
