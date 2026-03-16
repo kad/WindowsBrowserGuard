@@ -229,13 +229,13 @@ func ReadKeyValues(baseKeyPath, relativePath string) (map[string]string, error) 
 
 	keyPtr, err := syscall.UTF16PtrFromString(fullPath)
 	if err != nil {
-		return nil, fmt.Errorf("error converting key path: %v", err)
+		return nil, fmt.Errorf("error converting key path: %w", err)
 	}
 
 	var hKey windows.Handle
 	err = windows.RegOpenKeyEx(windows.HKEY_LOCAL_MACHINE, keyPtr, 0, windows.KEY_READ, &hKey)
 	if err != nil {
-		return nil, fmt.Errorf("error opening key: %v", err)
+		return nil, fmt.Errorf("error opening key: %w", err)
 	}
 	defer func() { _ = windows.RegCloseKey(hKey) }()
 
@@ -587,6 +587,58 @@ func RemoveFromAllowlist(baseKeyPath, allowlistPath, extensionID string, dryRun 
 	}
 
 	return nil
+}
+
+func RemoveAllowlistValueNames(baseKeyPath, allowlistPath string, valueNames []string, dryRun bool) ([]string, error) {
+	if len(valueNames) == 0 {
+		return nil, nil
+	}
+
+	if dryRun {
+		return append([]string(nil), valueNames...), nil
+	}
+
+	fullPath := baseKeyPath
+	if allowlistPath != "" {
+		fullPath = baseKeyPath + "\\" + allowlistPath
+	}
+
+	keyPtr, err := syscall.UTF16PtrFromString(fullPath)
+	if err != nil {
+		return nil, fmt.Errorf("error converting key path: %w", err)
+	}
+
+	var hKey windows.Handle
+	err = windows.RegOpenKeyEx(windows.HKEY_LOCAL_MACHINE, keyPtr, 0, windows.KEY_READ|windows.KEY_WRITE, &hKey)
+	if err != nil {
+		if err == windows.ERROR_FILE_NOT_FOUND {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error opening allowlist key: %w", err)
+	}
+	defer func() { _ = windows.RegCloseKey(hKey) }()
+
+	deleted := make([]string, 0, len(valueNames))
+	for _, valueName := range valueNames {
+		valueNamePtr, convErr := syscall.UTF16PtrFromString(valueName)
+		if convErr != nil {
+			return deleted, fmt.Errorf("error converting value name %s: %w", valueName, convErr)
+		}
+
+		ret, _, _ := regDeleteValueW.Call(
+			uintptr(hKey),
+			uintptr(unsafe.Pointer(valueNamePtr)),
+		)
+		if ret == uintptr(windows.ERROR_FILE_NOT_FOUND) {
+			continue
+		}
+		if ret != 0 {
+			return deleted, fmt.Errorf("error deleting allowlist value %s: error code %d", valueName, ret)
+		}
+		deleted = append(deleted, valueName)
+	}
+
+	return deleted, nil
 }
 
 func RemoveExtensionSettingsForID(baseKeyPath, extensionID string, dryRun bool, state *RegState, extensionIndex *ExtensionPathIndex) {
