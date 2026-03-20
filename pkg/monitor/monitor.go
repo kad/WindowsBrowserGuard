@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -111,15 +112,20 @@ func PrintDiff(ctx context.Context, oldState, newState *registry.RegState, keyPa
 							blocklistKeyPath := detection.GetBlocklistKeyPath(forcelistKeyPath)
 							allowlistKeyPath := detection.GetAllowlistKeyPath(forcelistKeyPath)
 
+							blocklistConfirmed := false
+							plannedBlockedIDs := make(PlannedBlockedIDs)
 							for _, valueData := range allValues {
 								extensionID := detection.ExtractExtensionIDFromValue(valueData)
 								if extensionID != "" {
 									telemetry.Printf(ctx, "  🔍 Extension ID: %s\n", extensionID)
+									trackPlannedBlockedID(plannedBlockedIDs, blocklistKeyPath, extensionID)
 
 									telemetry.Printf(ctx, "  📝 Adding to blocklist: %s\n", blocklistKeyPath)
 									err := registry.AddToBlocklist(keyPath, blocklistKeyPath, extensionID, !canWrite)
 									if err != nil {
 										telemetry.Printf(ctx, "  ⚠️  Failed to add to blocklist: %v\n", err)
+									} else if canWrite {
+										blocklistConfirmed = true
 									}
 
 									telemetry.Printf(ctx, "  🔍 Checking allowlist: %s\n", allowlistKeyPath)
@@ -146,6 +152,17 @@ func PrintDiff(ctx context.Context, oldState, newState *registry.RegState, keyPa
 									}
 								}
 							}
+
+							if blocklistConfirmed {
+								// Keep newState in sync with the registry only after confirming
+								// the blocklist key exists following a successful write.
+								newState.Subkeys[blocklistKeyPath] = true
+							}
+
+							// Post-process: verify blocklist/allowlist consistency
+							// across all known allowlists in newState. Each comparison
+							// remains browser-local (Chrome vs Chrome, Edge vs Edge).
+							EnforceBlockAllowlistConsistency(ctx, keyPath, newState, canWrite, plannedBlockedIDs)
 						}
 					}
 				}
@@ -439,6 +456,230 @@ func CleanupAllowlists(ctx context.Context, keyPath string, state *registry.RegS
 	}
 
 	fmt.Println()
+}
+
+// PlannedBlockedIDs maps a blocklist key path to extension IDs that are
+// expected to be added during the current enforcement pass but may not yet
+// exist in the live registry (for example during dry-run).
+type PlannedBlockedIDs map[string]map[string]bool
+
+func trackPlannedBlockedID(planned PlannedBlockedIDs, blocklistPath, extensionID string) {
+	if planned == nil || blocklistPath == "" || extensionID == "" {
+		return
+	}
+	if planned[blocklistPath] == nil {
+		planned[blocklistPath] = make(map[string]bool)
+	}
+	planned[blocklistPath][extensionID] = true
+}
+
+// CollectPlannedBlockedIDs scans Chromium forcelists in the captured state and
+// returns the blocklist entries that would be created from them.
+func CollectPlannedBlockedIDs(state *registry.RegState) PlannedBlockedIDs {
+	planned := make(PlannedBlockedIDs)
+	for valuePath, value := range state.Values {
+		if !detection.IsChromeExtensionForcelist(valuePath) {
+			continue
+		}
+		parentPath, ok := pathutils.GetParentPath(valuePath)
+		if !ok {
+			continue
+		}
+		extensionID := detection.ExtractExtensionIDFromValue(value.Data)
+		if extensionID == "" {
+			continue
+		}
+		trackPlannedBlockedID(planned, detection.GetBlocklistKeyPath(parentPath), extensionID)
+	}
+	return planned
+}
+
+// EnforceBlockAllowlistConsistency ensures that no extension ID present in a
+// Chromium browser's blocklist also appears in that same browser's allowlist.
+// This pass only applies to policies that use ExtensionInstallAllowlist and
+// ExtensionInstallBlocklist (for example Chrome and Edge). Firefox extension
+// policies are handled separately and are not part of this allowlist cleanup.
+//
+// For every ExtensionInstallAllowlist key found in state the function derives
+// the corresponding ExtensionInstallBlocklist path (same browser, same base
+// path) and reads it live from the registry. During dry-run it can also merge
+// planned blocklist additions so the reported allowlist removals reflect the
+// writes that would happen. Any allowlist value whose extension ID is present
+// in that browser's blocklist is removed; if the allowlist key is empty
+// afterwards it is deleted entirely.
+func EnforceBlockAllowlistConsistency(ctx context.Context, keyPath string, state *registry.RegState, canWrite bool, plannedBlockedIDs PlannedBlockedIDs) {
+	ctx, span := telemetry.StartSpan(ctx, "monitor.EnforceBlockAllowlistConsistency",
+		attribute.String("key-path", keyPath),
+		attribute.Bool("can-write", canWrite),
+	)
+	defer span.End()
+
+	if !canWrite {
+		telemetry.Println(ctx, "\n========================================")
+		telemetry.Println(ctx, "Enforcing blocklist/allowlist consistency...")
+		telemetry.Println(ctx, "(DRY-RUN MODE - showing planned operations)")
+		telemetry.Println(ctx, "========================================")
+	} else if !admin.IsAdmin() {
+		telemetry.Println(ctx, "\n⚠️  Not running as Administrator - skipping blocklist/allowlist consistency check")
+		return
+	} else {
+		telemetry.Println(ctx, "\n========================================")
+		telemetry.Println(ctx, "Enforcing blocklist/allowlist consistency...")
+		telemetry.Println(ctx, "========================================")
+	}
+
+	detectedConflicts := 0
+	resolvedConflicts := 0
+
+	for subkeyPath := range state.Subkeys {
+		if !pathutils.Contains(subkeyPath, "ExtensionInstallAllowlist") {
+			continue
+		}
+
+		// Derive the same-browser blocklist path. The path component replacement
+		// preserves the full browser prefix (e.g. "Microsoft\Edge\"), so Chrome
+		// blocklist is never compared against Edge allowlist and vice-versa.
+		blocklistPath := pathutils.ReplacePathComponent(
+			subkeyPath, "ExtensionInstallAllowlist", "ExtensionInstallBlocklist",
+		)
+
+		browser := detection.GetBrowserFromPath(subkeyPath)
+		telemetry.Printf(ctx, "\n[%s] Checking allowlist: %s\n", browser, subkeyPath)
+		telemetry.Printf(ctx, "[%s] Against blocklist:  %s\n", browser, blocklistPath)
+
+		// Read the blocklist live, then merge any planned dry-run additions.
+		blocklistValues, err := registry.ReadKeyValues(keyPath, blocklistPath)
+		if err != nil {
+			if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
+				blocklistValues = map[string]string{}
+			} else {
+				telemetry.Printf(ctx, "  ❌ Failed to read %s blocklist at HKLM\\%s\\%s: %v\n", browser, keyPath, blocklistPath, err)
+				telemetry.RecordError(ctx, err)
+				continue
+			}
+		}
+		if blocklistValues == nil {
+			blocklistValues = map[string]string{}
+		}
+
+		blockedIDs := make(map[string]bool, len(blocklistValues))
+		for _, v := range blocklistValues {
+			if id := detection.ExtractExtensionIDFromValue(v); id != "" {
+				blockedIDs[id] = true
+			}
+		}
+		if !canWrite {
+			for plannedID := range plannedBlockedIDs[blocklistPath] {
+				blockedIDs[plannedID] = true
+			}
+		}
+		if len(blockedIDs) == 0 {
+			telemetry.Printf(ctx, "  ℹ️  Blocklist is empty or absent - nothing to enforce\n")
+			continue
+		}
+		telemetry.Printf(ctx, "  📋 %d blocked ID(s) in %s blocklist\n", len(blockedIDs), browser)
+
+		// Read allowlist values live for accurate comparison.
+		allowlistValues, err := registry.ReadKeyValues(keyPath, subkeyPath)
+		if err != nil {
+			if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
+				telemetry.Printf(ctx, "  ✓ Allowlist is empty or absent - no conflicts possible\n")
+				continue
+			}
+			telemetry.Printf(ctx, "  ❌ Failed to read %s allowlist at HKLM\\%s\\%s: %v\n", browser, keyPath, subkeyPath, err)
+			telemetry.RecordError(ctx, err)
+			continue
+		}
+		if len(allowlistValues) == 0 {
+			telemetry.Printf(ctx, "  ✓ Allowlist is empty - no conflicts possible\n")
+			continue
+		}
+
+		conflicts := 0
+		initialAllowlistCount := len(allowlistValues)
+		conflictingValueNames := make([]string, 0, len(allowlistValues))
+		conflictingIDs := make([]string, 0, len(allowlistValues))
+		for valueName, valueData := range allowlistValues {
+			extID := detection.ExtractExtensionIDFromValue(valueData)
+			if extID == "" || !blockedIDs[extID] {
+				continue
+			}
+			conflicts++
+			detectedConflicts++
+			conflictingValueNames = append(conflictingValueNames, valueName)
+			conflictingIDs = append(conflictingIDs, extID)
+			telemetry.Printf(ctx, "  ⚠️  Conflict: %s is blocked but present in %s allowlist\n", extID, browser)
+		}
+
+		if conflicts == 0 {
+			telemetry.Printf(ctx, "  ✓ No conflicts in %s allowlist\n", browser)
+			continue
+		}
+
+		deletedValueNames, err := registry.RemoveAllowlistValueNames(keyPath, subkeyPath, conflictingValueNames, !canWrite)
+		if err != nil {
+			telemetry.Printf(ctx, "  ❌ Failed to remove conflicting allowlist entries: %v\n", err)
+			continue
+		}
+
+		deletedNames := make(map[string]bool, len(deletedValueNames))
+		for _, valueName := range deletedValueNames {
+			deletedNames[valueName] = true
+		}
+		if canWrite {
+			for _, valueName := range deletedValueNames {
+				delete(state.Values, pathutils.BuildPath(subkeyPath, valueName))
+			}
+		}
+		for i, valueName := range conflictingValueNames {
+			if !deletedNames[valueName] {
+				continue
+			}
+			resolvedConflicts++
+			if canWrite {
+				telemetry.Printf(ctx, "  ✓ Removed %s from %s allowlist\n", conflictingIDs[i], browser)
+			} else {
+				telemetry.Printf(ctx, "  ✓ Would remove %s from %s allowlist (dry run)\n", conflictingIDs[i], browser)
+			}
+		}
+
+		if !canWrite {
+			if conflicts == initialAllowlistCount {
+				telemetry.Printf(ctx, "  ✓ Would delete empty %s allowlist key (dry run)\n", browser)
+			}
+			continue
+		}
+
+		// Delete the key if it is now empty to leave no orphan keys behind.
+		remaining, err := registry.ReadKeyValues(keyPath, subkeyPath)
+		if err != nil {
+			telemetry.Printf(ctx, "  ❌ Failed to confirm whether %s allowlist is empty at HKLM\\%s\\%s: %v\n", browser, keyPath, subkeyPath, err)
+			telemetry.RecordError(ctx, err)
+			continue
+		}
+		if len(remaining) == 0 {
+			telemetry.Printf(ctx, "  🗑️  Allowlist empty after conflict removal, deleting: %s\n", subkeyPath)
+			if err := registry.DeleteRegistryKeyRecursive(keyPath, subkeyPath, !canWrite); err != nil {
+				telemetry.Printf(ctx, "  ❌ Failed to delete empty allowlist key: %v\n", err)
+			} else {
+				telemetry.Printf(ctx, "  ✓ Deleted empty %s allowlist key\n", browser)
+				registry.RemoveSubtreeFromState(state, subkeyPath)
+				delete(state.Subkeys, subkeyPath)
+			}
+		}
+	}
+
+	if detectedConflicts == 0 {
+		telemetry.Println(ctx, "✓ No blocklist/allowlist conflicts found")
+	} else {
+		if canWrite {
+			telemetry.Printf(ctx, "✓ Resolved %d of %d blocklist/allowlist conflict(s)\n", resolvedConflicts, detectedConflicts)
+		} else {
+			telemetry.Printf(ctx, "✓ Would resolve %d of %d blocklist/allowlist conflict(s) (dry run)\n", resolvedConflicts, detectedConflicts)
+		}
+	}
+	telemetry.Println(ctx, "========================================")
+	telemetry.Println(ctx, "")
 }
 
 // GetBlockedExtensionIDs scans the registry state for all blocked extension IDs

@@ -268,6 +268,9 @@ func runApp(dryRun, quiet bool, logFilePath, traceFile, rawOTLPEndpoint, otlpHea
 		extensionIndex.GetCount(), indexDuration)
 
 	monitor.ProcessExistingPolicies(ctx, keyPath, previousState, canWrite, extensionIndex)
+	// Run the targeted consistency pass first so startup behavior matches the
+	// live path, then follow with the broader allowlist cleanup.
+	monitor.EnforceBlockAllowlistConsistency(ctx, keyPath, previousState, canWrite, monitor.CollectPlannedBlockedIDs(previousState))
 	monitor.CleanupAllowlists(ctx, keyPath, previousState, canWrite)
 	monitor.CleanupExtensionSettings(ctx, keyPath, previousState, canWrite, extensionIndex)
 
