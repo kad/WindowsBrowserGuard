@@ -63,6 +63,25 @@ func IsFirefoxExtensionSettings(path string) bool {
 		pathutils.Contains(path, "Firefox\\ExtensionSettings")
 }
 
+// IsFirefoxExtensionsInstall checks if a path contains Firefox\Extensions\Install
+// as consecutive exact path components (case-insensitive).
+func IsFirefoxExtensionsInstall(path string) bool {
+	return pathutils.HasPathComponentSequence(path, "Firefox", "Extensions", "Install")
+}
+
+// IsFirefoxExtensionsLocked checks if a path contains Firefox\Extensions\Locked
+// as consecutive exact path components (case-insensitive).
+func IsFirefoxExtensionsLocked(path string) bool {
+	return pathutils.HasPathComponentSequence(path, "Firefox", "Extensions", "Locked")
+}
+
+// IsFirefoxForcedExtension returns true for any Firefox forced-install policy path
+func IsFirefoxForcedExtension(path string) bool {
+	return IsFirefoxExtensionSettings(path) ||
+		IsFirefoxExtensionsInstall(path) ||
+		IsFirefoxExtensionsLocked(path)
+}
+
 // IsEdgeExtensionForcelist checks if a path is an Edge forcelist path
 func IsEdgeExtensionForcelist(path string) bool {
 	return pathutils.Contains(path, "Microsoft\\Edge\\ExtensionInstallForcelist") ||
@@ -114,6 +133,21 @@ func ExtractFirefoxExtensionID(valuePath string) string {
 	return ""
 }
 
+// GetFirefoxExtensionsKeyPath returns the parent key to delete for
+// an Extensions\Install or Extensions\Locked value path.
+// e.g. "Mozilla\Firefox\Extensions\Install\1" → "Mozilla\Firefox\Extensions\Install"
+// Requires the Extensions component to immediately precede Install/Locked.
+func GetFirefoxExtensionsKeyPath(valuePath string) string {
+	parts := pathutils.SplitPath(valuePath)
+	for i := 0; i+1 < len(parts); i++ {
+		if strings.EqualFold(parts[i], "Extensions") &&
+			(strings.EqualFold(parts[i+1], "Install") || strings.EqualFold(parts[i+1], "Locked")) {
+			return strings.Join(parts[:i+2], "\\")
+		}
+	}
+	return ""
+}
+
 // GetFirefoxBlocklistPath returns the Firefox blocklist path for an extension ID
 func GetFirefoxBlocklistPath(extensionID string) string {
 	// Firefox blocklist path: Mozilla\Firefox\ExtensionSettings\{extension-id}\installation_mode
@@ -159,7 +193,7 @@ func ExtractExtensionIDFromPath(path string) string {
 // IsExtensionPolicy checks if a path or value represents an extension policy
 func IsExtensionPolicy(path string) bool {
 	return IsChromeExtensionForcelist(path) ||
-		IsFirefoxExtensionSettings(path) ||
+		IsFirefoxForcedExtension(path) ||
 		IsEdgeExtensionForcelist(path) ||
 		IsExtensionSettingsPath(path) ||
 		Is3rdPartyExtensionsPath(path)
@@ -172,8 +206,13 @@ func ShouldBlockPath(path string) bool {
 		return true
 	}
 
-	// Block Firefox forced extension installs
+	// Block Firefox forced extension installs via ExtensionSettings
 	if IsFirefoxExtensionSettings(path) && pathutils.Contains(path, "installation_mode") {
+		return true
+	}
+
+	// Block Firefox forced extension installs via Extensions\Install and Extensions\Locked
+	if IsFirefoxExtensionsInstall(path) || IsFirefoxExtensionsLocked(path) {
 		return true
 	}
 

@@ -46,6 +46,32 @@ func Contains(s, substr string) bool {
 	return ContainsIgnoreCase(s, substr)
 }
 
+// HasPathComponentSequence reports whether path contains the given registry path
+// components as consecutive exact segments (case-insensitive).
+// Example: HasPathComponentSequence("Mozilla\\Firefox\\Extensions\\Install\\1", "Extensions", "Install") == true
+func HasPathComponentSequence(path string, components ...string) bool {
+	if len(components) == 0 {
+		return false
+	}
+	parts := SplitPath(path)
+	if len(parts) < len(components) {
+		return false
+	}
+	for i := 0; i <= len(parts)-len(components); i++ {
+		matched := true
+		for j, component := range components {
+			if !strings.EqualFold(parts[i+j], component) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
 // HasPathComponent checks if path contains a specific component
 // More efficient than case-insensitive contains for path matching
 func HasPathComponent(path, component string) bool {
