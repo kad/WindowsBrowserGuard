@@ -209,6 +209,37 @@ func PrintDiff(ctx context.Context, oldState, newState *registry.RegState, keyPa
 					}
 				}
 			}
+
+			// Firefox Extensions\Install and Extensions\Locked (legacy GP format)
+			if detection.IsFirefoxExtensionsInstall(name) || detection.IsFirefoxExtensionsLocked(name) {
+				telemetry.Printf(ctx, "  ⚠️  DETECTED Firefox Extensions policy (%s) - PROCESSING...\n", name)
+
+				if !admin.IsAdmin() {
+					telemetry.Printf(ctx, "  ❌ Insufficient privileges. Run as Administrator.\n")
+				} else {
+					// Extensions\Locked value data is the extension ID — block it before removing the key
+					if detection.IsFirefoxExtensionsLocked(name) && newVal.Data != "" {
+						telemetry.Printf(ctx, "  🔍 Extension ID: %s\n", newVal.Data)
+						telemetry.Printf(ctx, "  📝 Blocking Firefox extension\n")
+						if err := registry.BlockFirefoxExtension(keyPath, newVal.Data, !canWrite); err != nil {
+							telemetry.Printf(ctx, "  ⚠️  Failed to block extension: %v\n", err)
+						}
+					}
+
+					keyToDelete := detection.GetFirefoxExtensionsKeyPath(name)
+					if keyToDelete != "" {
+						telemetry.Printf(ctx, "  🗑️  Deleting Firefox Extensions policy key: %s\n", keyToDelete)
+						err := registry.DeleteRegistryKeyRecursive(keyPath, keyToDelete, !canWrite)
+						if err != nil {
+							telemetry.Printf(ctx, "  ❌ Failed to delete key: %v\n", err)
+						} else {
+							telemetry.Printf(ctx, "  ✓ Successfully deleted Firefox Extensions policy\n")
+							delete(newState.Subkeys, keyToDelete)
+							registry.RemoveSubtreeFromState(newState, keyToDelete)
+						}
+					}
+				}
+			}
 		} else if oldVal.Data != newVal.Data || oldVal.Type != newVal.Type {
 			telemetry.Printf(ctx, "[VALUE CHANGED] %s\n", name)
 			telemetry.Printf(ctx, "  Old: %s (type: %d)\n", oldVal.Data, oldVal.Type)
@@ -381,6 +412,36 @@ func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registr
 							registry.RemoveSubtreeFromState(state, extensionKeyPath)
 						}
 					}
+				}
+			}
+		}
+
+		// Firefox Extensions\Install and Extensions\Locked (legacy GP format)
+		if detection.IsFirefoxExtensionsInstall(valuePath) || detection.IsFirefoxExtensionsLocked(valuePath) {
+			hasExistingPolicies = true
+			telemetry.Printf(ctx, "\n[EXISTING FIREFOX EXTENSIONS POLICY DETECTED]\n")
+			telemetry.Printf(ctx, "Path: %s\n", valuePath)
+			telemetry.Printf(ctx, "Value: %s\n", value.Data)
+
+			// Extensions\Locked value data is the extension ID — block it before removing the key
+			if detection.IsFirefoxExtensionsLocked(valuePath) && value.Data != "" {
+				telemetry.Printf(ctx, "🔍 Extension ID: %s\n", value.Data)
+				telemetry.Printf(ctx, "📝 Blocking Firefox extension\n")
+				if err := registry.BlockFirefoxExtension(keyPath, value.Data, !canWrite); err != nil {
+					telemetry.Printf(ctx, "⚠️  Failed to block extension: %v\n", err)
+				}
+			}
+
+			keyToDelete := detection.GetFirefoxExtensionsKeyPath(valuePath)
+			if keyToDelete != "" {
+				telemetry.Printf(ctx, "🗑️  Deleting Firefox Extensions policy key: %s\n", keyToDelete)
+				err := registry.DeleteRegistryKeyRecursive(keyPath, keyToDelete, !canWrite)
+				if err != nil {
+					telemetry.Printf(ctx, "❌ Failed to delete key: %v\n", err)
+				} else {
+					telemetry.Printf(ctx, "✓ Successfully removed Firefox Extensions policy\n")
+					delete(state.Subkeys, keyToDelete)
+					registry.RemoveSubtreeFromState(state, keyToDelete)
 				}
 			}
 		}
