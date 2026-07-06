@@ -44,6 +44,70 @@ type PerfMetrics struct {
 
 const MaxRegistryDepth = 8
 
+// enumRegValue reads a single indexed value from hKey via RegEnumValueW,
+// returning its name, type, and formatted data. If the value data does not
+// fit in the standard 16KB buffer (ERROR_MORE_DATA), it retries once with a
+// 64KB buffer instead of aborting the caller's entire enumeration/capture.
+// done reports ERROR_NO_MORE_ITEMS (enumeration exhausted).
+func enumRegValue(hKey windows.Handle, index uint32) (name string, valueType uint32, data string, done bool, err error) {
+	nameBuf := buffers.GetLargeNameBuffer()
+	defer buffers.PutLargeNameBuffer(nameBuf)
+
+	dataBuf := buffers.GetDataBuffer()
+	defer buffers.PutDataBuffer(dataBuf)
+
+	nameLen := uint32(len(*nameBuf))
+	dataLen := uint32(len(*dataBuf))
+
+	ret, _, _ := regEnumValueW.Call(
+		uintptr(hKey),
+		uintptr(index),
+		uintptr(unsafe.Pointer(&(*nameBuf)[0])),
+		uintptr(unsafe.Pointer(&nameLen)),
+		0,
+		uintptr(unsafe.Pointer(&valueType)),
+		uintptr(unsafe.Pointer(&(*dataBuf)[0])),
+		uintptr(unsafe.Pointer(&dataLen)),
+	)
+
+	switch {
+	case ret == uintptr(windows.ERROR_NO_MORE_ITEMS):
+		done = true
+		return
+	case ret == uintptr(windows.ERROR_MORE_DATA):
+		largeDataBuf := buffers.GetLargeDataBuffer()
+		defer buffers.PutLargeDataBuffer(largeDataBuf)
+
+		nameLen = uint32(len(*nameBuf))
+		largeDataLen := uint32(len(*largeDataBuf))
+
+		ret, _, _ = regEnumValueW.Call(
+			uintptr(hKey),
+			uintptr(index),
+			uintptr(unsafe.Pointer(&(*nameBuf)[0])),
+			uintptr(unsafe.Pointer(&nameLen)),
+			0,
+			uintptr(unsafe.Pointer(&valueType)),
+			uintptr(unsafe.Pointer(&(*largeDataBuf)[0])),
+			uintptr(unsafe.Pointer(&largeDataLen)),
+		)
+		if ret != 0 {
+			err = fmt.Errorf("error enumerating values (retry with 64KB buffer): error code %d", ret)
+			return
+		}
+		name = syscall.UTF16ToString((*nameBuf)[:nameLen])
+		data = detection.FormatRegValue(valueType, (*largeDataBuf)[:largeDataLen])
+		return
+	case ret != 0:
+		err = fmt.Errorf("error enumerating values: error code %d", ret)
+		return
+	}
+
+	name = syscall.UTF16ToString((*nameBuf)[:nameLen])
+	data = detection.FormatRegValue(valueType, (*dataBuf)[:dataLen])
+	return
+}
+
 type ExtensionPathIndex struct {
 	pathsByExtID map[string][]string
 	mu           sync.RWMutex
@@ -119,9 +183,7 @@ func (idx *ExtensionPathIndex) GetCount() int {
 }
 
 func CaptureKeyRecursive(hKey windows.Handle, relativePath string, state *RegState, depth int) error {
-	const maxDepth = 8
-
-	if depth > maxDepth {
+	if depth > MaxRegistryDepth {
 		return nil
 	}
 
@@ -152,38 +214,13 @@ func CaptureKeyRecursive(hKey windows.Handle, relativePath string, state *RegSta
 
 	index = 0
 	for {
-		nameBuf := buffers.GetLargeNameBuffer()
-		nameLen := uint32(len(*nameBuf))
-		var valueType uint32
-		dataBuf := buffers.GetDataBuffer()
-		dataLen := uint32(len(*dataBuf))
-
-		ret, _, _ := regEnumValueW.Call(
-			uintptr(hKey),
-			uintptr(index),
-			uintptr(unsafe.Pointer(&(*nameBuf)[0])),
-			uintptr(unsafe.Pointer(&nameLen)),
-			0,
-			uintptr(unsafe.Pointer(&valueType)),
-			uintptr(unsafe.Pointer(&(*dataBuf)[0])),
-			uintptr(unsafe.Pointer(&dataLen)),
-		)
-
-		if ret == uintptr(windows.ERROR_NO_MORE_ITEMS) {
-			buffers.PutLargeNameBuffer(nameBuf)
-			buffers.PutDataBuffer(dataBuf)
+		valueName, valueType, valueData, done, err := enumRegValue(hKey, index)
+		if done {
 			break
 		}
-		if ret != 0 {
-			buffers.PutLargeNameBuffer(nameBuf)
-			buffers.PutDataBuffer(dataBuf)
-			return fmt.Errorf("error enumerating values: error code %d", ret)
+		if err != nil {
+			return fmt.Errorf("error reading value at index %d under %q: %w", index, relativePath, err)
 		}
-
-		valueName := syscall.UTF16ToString((*nameBuf)[:nameLen])
-		valueData := detection.FormatRegValue(valueType, (*dataBuf)[:dataLen])
-		buffers.PutLargeNameBuffer(nameBuf)
-		buffers.PutDataBuffer(dataBuf)
 
 		fullPath := pathutils.BuildPath(relativePath, valueName)
 
@@ -242,38 +279,13 @@ func ReadKeyValues(baseKeyPath, relativePath string) (map[string]string, error) 
 	values := make(map[string]string)
 	var index uint32
 	for {
-		nameBuf := buffers.GetLargeNameBuffer()
-		nameLen := uint32(len(*nameBuf))
-		var valueType uint32
-		dataBuf := buffers.GetDataBuffer()
-		dataLen := uint32(len(*dataBuf))
-
-		ret, _, _ := regEnumValueW.Call(
-			uintptr(hKey),
-			uintptr(index),
-			uintptr(unsafe.Pointer(&(*nameBuf)[0])),
-			uintptr(unsafe.Pointer(&nameLen)),
-			0,
-			uintptr(unsafe.Pointer(&valueType)),
-			uintptr(unsafe.Pointer(&(*dataBuf)[0])),
-			uintptr(unsafe.Pointer(&dataLen)),
-		)
-
-		if ret == uintptr(windows.ERROR_NO_MORE_ITEMS) {
-			buffers.PutLargeNameBuffer(nameBuf)
-			buffers.PutDataBuffer(dataBuf)
+		valueName, _, valueData, done, err := enumRegValue(hKey, index)
+		if done {
 			break
 		}
-		if ret != 0 {
-			buffers.PutLargeNameBuffer(nameBuf)
-			buffers.PutDataBuffer(dataBuf)
-			return nil, fmt.Errorf("error enumerating values: error code %d", ret)
+		if err != nil {
+			return nil, fmt.Errorf("error reading value at index %d under %q: %w", index, fullPath, err)
 		}
-
-		valueName := syscall.UTF16ToString((*nameBuf)[:nameLen])
-		valueData := detection.FormatRegValue(valueType, (*dataBuf)[:dataLen])
-		buffers.PutLargeNameBuffer(nameBuf)
-		buffers.PutDataBuffer(dataBuf)
 		values[valueName] = valueData
 		index++
 	}
@@ -333,33 +345,41 @@ func DeleteRegistryKeyRecursive(baseKeyPath, relativePath string, dryRun bool) e
 	if err != nil {
 		return fmt.Errorf("error opening key: %v", err)
 	}
-	defer func() { _ = windows.RegCloseKey(hKey) }()
 
-	for {
-		nameBuf := make([]uint16, 256)
-		nameLen := uint32(len(nameBuf))
-		err := windows.RegEnumKeyEx(hKey, 0, &nameBuf[0], &nameLen, nil, nil, nil, nil)
-		if err == windows.ERROR_NO_MORE_ITEMS {
+	// Enumerate all subkey names up front instead of always re-reading index 0
+	// as subkeys are deleted. Relying on live index shifting means a subkey
+	// whose deletion fails (permission denied, key open elsewhere, etc.) would
+	// be re-enumerated at the same index forever, hanging the caller.
+	var subkeyNames []string
+	for index := uint32(0); ; index++ {
+		nameBuf := buffers.GetNameBuffer()
+		nameLen := uint32(len(*nameBuf))
+		enumErr := windows.RegEnumKeyEx(hKey, index, &(*nameBuf)[0], &nameLen, nil, nil, nil, nil)
+		if enumErr == windows.ERROR_NO_MORE_ITEMS {
+			buffers.PutNameBuffer(nameBuf)
 			break
 		}
-		if err != nil {
-			return fmt.Errorf("error enumerating subkeys: %v", err)
+		if enumErr != nil {
+			buffers.PutNameBuffer(nameBuf)
+			_ = windows.RegCloseKey(hKey)
+			return fmt.Errorf("error enumerating subkeys: %v", enumErr)
 		}
-		subkeyName := syscall.UTF16ToString(nameBuf[:nameLen])
+		subkeyNames = append(subkeyNames, syscall.UTF16ToString((*nameBuf)[:nameLen]))
+		buffers.PutNameBuffer(nameBuf)
+	}
+	_ = windows.RegCloseKey(hKey)
 
+	for _, subkeyName := range subkeyNames {
 		subkeyPath := relativePath
 		if subkeyPath != "" {
 			subkeyPath += "\\"
 		}
 		subkeyPath += subkeyName
 
-		err = DeleteRegistryKeyRecursive(baseKeyPath, subkeyPath, dryRun)
-		if err != nil {
-			fmt.Printf("Warning: failed to delete subkey %s: %v\n", subkeyPath, err)
+		if delErr := DeleteRegistryKeyRecursive(baseKeyPath, subkeyPath, dryRun); delErr != nil {
+			return fmt.Errorf("failed to delete subkey %s: %w", subkeyPath, delErr)
 		}
 	}
-
-	_ = windows.RegCloseKey(hKey)
 
 	parentPath := baseKeyPath
 	if relativePath != "" {
@@ -433,7 +453,10 @@ func AddToBlocklist(baseKeyPath, blocklistPath, extensionID string, dryRun bool)
 	}
 	defer func() { _ = windows.RegCloseKey(hKey) }()
 
-	existingValues, _ := ReadKeyValues(baseKeyPath, blocklistPath)
+	existingValues, err := ReadKeyValues(baseKeyPath, blocklistPath)
+	if err != nil {
+		return fmt.Errorf("error reading existing blocklist values: %w", err)
+	}
 
 	for _, value := range existingValues {
 		if value == extensionID {
