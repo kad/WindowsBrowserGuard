@@ -14,6 +14,20 @@ import (
 // DETECTION LOGIC - Pure functions for parsing and detection (no registry I/O)
 // ============================================================================
 
+// SanitizeExtensionID trims whitespace and validates that the string is safe
+// to use as a Firefox extension ID in a registry path. Returns empty string
+// for empty IDs and IDs containing NUL bytes or path separators.
+func SanitizeExtensionID(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" || strings.ContainsRune(id, '\x00') {
+		return ""
+	}
+	if strings.ContainsAny(id, "\\/") {
+		return ""
+	}
+	return id
+}
+
 // ExtractExtensionIDFromValue extracts the extension ID from a forcelist value
 // Format: "extensionid;https://update-url"
 func ExtractExtensionIDFromValue(value string) string {
