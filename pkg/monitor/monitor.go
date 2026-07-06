@@ -218,11 +218,16 @@ func PrintDiff(ctx context.Context, oldState, newState *registry.RegState, keyPa
 					telemetry.Printf(ctx, "  ❌ Insufficient privileges. Run as Administrator.\n")
 				} else {
 					// Extensions\Locked value data is the extension ID — block it before removing the key
-					if detection.IsFirefoxExtensionsLocked(name) && newVal.Data != "" {
-						telemetry.Printf(ctx, "  🔍 Extension ID: %s\n", newVal.Data)
-						telemetry.Printf(ctx, "  📝 Blocking Firefox extension\n")
-						if err := registry.BlockFirefoxExtension(keyPath, newVal.Data, !canWrite); err != nil {
-							telemetry.Printf(ctx, "  ⚠️  Failed to block extension: %v\n", err)
+					if detection.IsFirefoxExtensionsLocked(name) {
+						extID := detection.SanitizeExtensionID(newVal.Data)
+						if extID != "" {
+							telemetry.Printf(ctx, "  🔍 Extension ID: %s\n", extID)
+							telemetry.Printf(ctx, "  📝 Blocking Firefox extension\n")
+							if err := registry.BlockFirefoxExtension(keyPath, extID, !canWrite); err != nil {
+								telemetry.Printf(ctx, "  ⚠️  Failed to block extension: %v\n", err)
+							}
+						} else {
+							telemetry.Printf(ctx, "  ⚠️  Skipping block for %s: invalid extension ID in value data %q\n", name, newVal.Data)
 						}
 					}
 
@@ -424,11 +429,16 @@ func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registr
 			telemetry.Printf(ctx, "Value: %s\n", value.Data)
 
 			// Extensions\Locked value data is the extension ID — block it before removing the key
-			if detection.IsFirefoxExtensionsLocked(valuePath) && value.Data != "" {
-				telemetry.Printf(ctx, "🔍 Extension ID: %s\n", value.Data)
-				telemetry.Printf(ctx, "📝 Blocking Firefox extension\n")
-				if err := registry.BlockFirefoxExtension(keyPath, value.Data, !canWrite); err != nil {
-					telemetry.Printf(ctx, "⚠️  Failed to block extension: %v\n", err)
+			if detection.IsFirefoxExtensionsLocked(valuePath) {
+				extID := detection.SanitizeExtensionID(value.Data)
+				if extID != "" {
+					telemetry.Printf(ctx, "🔍 Extension ID: %s\n", extID)
+					telemetry.Printf(ctx, "📝 Blocking Firefox extension\n")
+					if err := registry.BlockFirefoxExtension(keyPath, extID, !canWrite); err != nil {
+						telemetry.Printf(ctx, "⚠️  Failed to block extension: %v\n", err)
+					}
+				} else {
+					telemetry.Printf(ctx, "⚠️  Skipping block for %s: invalid extension ID in value data %q\n", valuePath, value.Data)
 				}
 			}
 
