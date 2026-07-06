@@ -92,17 +92,9 @@ func PrintDiff(ctx context.Context, oldState, newState *registry.RegState, keyPa
 				if !admin.IsAdmin() {
 					telemetry.Printf(ctx, "  ❌ Insufficient privileges. Run as Administrator.\n")
 				} else {
-					lastSlash := -1
-					for i := len(name) - 1; i >= 0; i-- {
-						if name[i] == '\\' {
-							lastSlash = i
-							break
-						}
-					}
+					forcelistKeyPath, hasParent := pathutils.GetParentPath(name)
 
-					if lastSlash >= 0 {
-						forcelistKeyPath := name[:lastSlash]
-
+					if hasParent {
 						allValues, err := registry.ReadKeyValues(keyPath, forcelistKeyPath)
 						if err != nil {
 							telemetry.Printf(ctx, "  ⚠️  Could not read forcelist values: %v\n", err)
@@ -185,16 +177,9 @@ func PrintDiff(ctx context.Context, oldState, newState *registry.RegState, keyPa
 								telemetry.Printf(ctx, "  ⚠️  Failed to block extension: %v\n", err)
 							}
 
-							lastSlash := -1
-							for i := len(name) - 1; i >= 0; i-- {
-								if name[i] == '\\' {
-									lastSlash = i
-									break
-								}
-							}
+							extensionKeyPath, hasParent := pathutils.GetParentPath(name)
 
-							if lastSlash >= 0 {
-								extensionKeyPath := name[:lastSlash]
+							if hasParent {
 								telemetry.Printf(ctx, "  🗑️  Deleting install policy: %s\n", extensionKeyPath)
 								err = registry.DeleteRegistryKeyRecursive(keyPath, extensionKeyPath, !canWrite)
 								if err != nil {
@@ -269,7 +254,6 @@ func PrintDiff(ctx context.Context, oldState, newState *registry.RegState, keyPa
 }
 
 // ProcessExistingPolicies scans for and processes existing extension install policies
-// ProcessExistingPolicies scans for and processes existing extension install policies
 func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registry.RegState, canWrite bool, extensionIndex *registry.ExtensionPathIndex) {
 	ctx, span := telemetry.StartSpan(ctx, "monitor.ProcessExistingPolicies",
 		attribute.String("key-path", keyPath),
@@ -277,12 +261,12 @@ func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registr
 	)
 	defer span.End()
 
-	if !canWrite && !admin.IsAdmin() {
+	if !canWrite {
 		telemetry.Println(ctx, "\n========================================")
 		telemetry.Println(ctx, "Checking for existing extension policies...")
 		telemetry.Println(ctx, "(DRY-RUN MODE - showing planned operations)")
 		telemetry.Println(ctx, "========================================")
-	} else if !admin.IsAdmin() && canWrite {
+	} else if !admin.IsAdmin() {
 		telemetry.Println(ctx, "\n⚠️  Not running as Administrator - skipping existing policy processing")
 		return
 	} else {
@@ -313,17 +297,9 @@ func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registr
 				// Record metrics
 				telemetry.RecordExtensionDetected(ctx, browser, extensionID)
 
-				lastSlash := -1
-				for i := len(valuePath) - 1; i >= 0; i-- {
-					if valuePath[i] == '\\' {
-						lastSlash = i
-						break
-					}
-				}
+				forcelistKeyPath, hasParent := pathutils.GetParentPath(valuePath)
 
-				if lastSlash >= 0 {
-					forcelistKeyPath := valuePath[:lastSlash]
-
+				if hasParent {
 					allValues, err := registry.ReadKeyValues(keyPath, forcelistKeyPath)
 					if err != nil {
 						telemetry.Printf(ctx, "⚠️  Could not read forcelist values: %v\n", err)
@@ -397,16 +373,9 @@ func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registr
 						telemetry.Printf(ctx, "⚠️  Failed to block extension: %v\n", err)
 					}
 
-					lastSlash := -1
-					for i := len(valuePath) - 1; i >= 0; i-- {
-						if valuePath[i] == '\\' {
-							lastSlash = i
-							break
-						}
-					}
+					extensionKeyPath, hasParent := pathutils.GetParentPath(valuePath)
 
-					if lastSlash >= 0 {
-						extensionKeyPath := valuePath[:lastSlash]
+					if hasParent {
 						telemetry.Printf(ctx, "🗑️  Deleting Firefox install policy: %s\n", extensionKeyPath)
 						err = registry.DeleteRegistryKeyRecursive(keyPath, extensionKeyPath, !canWrite)
 						if err != nil {
@@ -466,7 +435,6 @@ func ProcessExistingPolicies(ctx context.Context, keyPath string, state *registr
 }
 
 // CleanupAllowlists removes ExtensionInstallAllowlist keys
-// CleanupAllowlists removes ExtensionInstallAllowlist keys
 func CleanupAllowlists(ctx context.Context, keyPath string, state *registry.RegState, canWrite bool) {
 	ctx, span := telemetry.StartSpan(ctx, "monitor.CleanupAllowlists",
 		attribute.String("key-path", keyPath),
@@ -474,7 +442,10 @@ func CleanupAllowlists(ctx context.Context, keyPath string, state *registry.RegS
 	)
 	defer span.End()
 
-	if !admin.IsAdmin() {
+	if !canWrite {
+		telemetry.Println(ctx, "(DRY-RUN MODE - showing planned operations)")
+	} else if !admin.IsAdmin() {
+		telemetry.Println(ctx, "\n⚠️  Not running as Administrator - skipping allowlist cleanup")
 		return
 	}
 
@@ -800,7 +771,10 @@ func CleanupExtensionSettings(ctx context.Context, keyPath string, state *regist
 	)
 	defer span.End()
 
-	if !admin.IsAdmin() {
+	if !canWrite {
+		telemetry.Println(ctx, "(DRY-RUN MODE - showing planned operations)")
+	} else if !admin.IsAdmin() {
+		telemetry.Println(ctx, "\n⚠️  Not running as Administrator - skipping extension settings cleanup")
 		return
 	}
 

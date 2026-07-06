@@ -42,12 +42,26 @@ func IsAdmin() bool {
 
 // GetExecutablePath returns the full path to the current executable
 func GetExecutablePath() (string, error) {
-	buf := make([]uint16, windows.MAX_PATH)
-	ret, _, _ := getModuleFileNameW.Call(0, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-	if ret == 0 {
-		return "", fmt.Errorf("failed to get executable path")
+	// Start with MAX_PATH and grow if the result is truncated. GetModuleFileNameW
+	// returns the number of characters copied (== buffer length, no NUL room)
+	// when the buffer was too small, which is indistinguishable from an exact
+	// fit unless we check for it and retry with a larger buffer.
+	bufLen := int(windows.MAX_PATH)
+	for {
+		buf := make([]uint16, bufLen)
+		ret, _, callErr := getModuleFileNameW.Call(0, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+		if ret == 0 {
+			return "", fmt.Errorf("GetModuleFileNameW failed: %w", callErr)
+		}
+		if int(ret) < bufLen {
+			return syscall.UTF16ToString(buf[:ret]), nil
+		}
+		// Truncated: buffer was exactly filled, ret == bufLen. Retry larger.
+		if bufLen >= 1<<20 {
+			return "", fmt.Errorf("failed to get executable path: path too long")
+		}
+		bufLen *= 2
 	}
-	return syscall.UTF16ToString(buf), nil
 }
 
 // ElevatePrivileges attempts to restart the current process with elevated privileges
